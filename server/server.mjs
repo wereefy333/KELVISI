@@ -1,6 +1,8 @@
 ﻿import express from 'express';
 import nodemailer from 'nodemailer';
 import cors from 'cors';
+import rateLimit from 'express-rate-limit';
+import { appendFile } from 'fs/promises';
 import { createHmac, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'crypto';
 import { PrismaClient } from '@prisma/client';
 
@@ -28,6 +30,28 @@ if (!CORS_ORIGINS.includes(APP_PUBLIC_URL)) {
 
 app.use(cors({ origin: CORS_ORIGINS }));
 app.use(express.json());
+
+const MIN_MASTER_PASSWORD_LENGTH = 8;
+const SERVICE_ALLOWED_FIELDS = ['name', 'description', 'price', 'durationMinutes', 'category', 'type', 'isActive'];
+const REVIEW_ALLOWED_FIELDS = ['status'];
+const auditLogUrl = new URL('./audit.log', import.meta.url);
+
+const loginRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  message: { success: false, error: 'Слишком много попыток входа. Повторите позже.' },
+});
+
+const bookingSlotsRateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Слишком много запросов расчета слотов. Повторите позже.' },
+});
 
 function unauthorized(res, error = 'Требуется авторизация') {
   return res.status(401).json({ success: false, error });
@@ -164,7 +188,11 @@ function normalizeClientName(value) {
 function normalizeClientPhone(value) {
   const normalized = String(value ?? '').trim();
   if (!normalized) return null;
-  return normalized.slice(0, 40);
+  const compact = normalized.slice(0, 40);
+  const digits = compact.replace(/\D/g, '');
+  if (digits.length < 7 || digits.length > 15) return null;
+  if (!/^\+?[\d\s\-()]+$/.test(compact)) return null;
+  return compact;
 }
 
 function normalizeClientEmail(value) {
@@ -175,6 +203,93 @@ function normalizeClientEmail(value) {
 
 function isValidEmail(email) {
   return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(email ?? ''));
+}
+
+async function writeAuditLog(entry) {
+  const normalizedEntry = {
+    at: new Date().toISOString(),
+    ...entry,
+  };
+
+  try {
+    await appendFile(auditLogUrl, `${JSON.stringify(normalizedEntry)}\n`, 'utf8');
+  } catch (error) {
+    console.error('✖ audit log write failed:', error);
+  }
+}
+
+function getAuditActor(req) {
+  return {
+    id: req.auth?.user?.id ?? null,
+    role: req.auth?.user?.role ?? 'ANONYMOUS',
+    ip: req.ip,
+  };
+}
+
+function pickServiceData(rawInput) {
+  return pickAllowedFields(rawInput ?? {}, SERVICE_ALLOWED_FIELDS);
+}
+
+function normalizeAndValidateServiceData(data, { forCreate }) {
+  if (Object.prototype.hasOwnProperty.call(data, 'name')) {
+    data.name = String(data.name ?? '').trim().slice(0, 120);
+    if (!data.name) return 'Укажите название услуги';
+  } else if (forCreate) {
+    return 'Укажите название услуги';
+  }
+
+  if (Object.prototype.hasOwnProperty.call(data, 'description')) {
+    data.description = String(data.description ?? '').trim().slice(0, 1000);
+    if (!data.description) return 'Укажите описание услуги';
+  } else if (forCreate) {
+    return 'Укажите описание услуги';
+  }
+
+  if (Object.prototype.hasOwnProperty.call(data, 'price')) {
+    const price = Number(data.price);
+    if (!Number.isInteger(price) || price < 0 || price > 1_000_000) return 'Некорректная цена услуги';
+    data.price = price;
+  } else if (forCreate) {
+    return 'Укажите цену услуги';
+  }
+
+  if (Object.prototype.hasOwnProperty.call(data, 'durationMinutes')) {
+    const duration = Number(data.durationMinutes);
+    if (!Number.isInteger(duration) || duration <= 0 || duration > 24 * 60) return 'Некорректная длительность услуги';
+    data.durationMinutes = duration;
+  } else if (forCreate) {
+    return 'Укажите длительность услуги';
+  }
+
+  if (Object.prototype.hasOwnProperty.call(data, 'category')) {
+    if (!['MEN', 'WOMEN'].includes(String(data.category))) return 'Некорректная категория услуги';
+  } else if (forCreate) {
+    return 'Укажите категорию услуги';
+  }
+
+  if (Object.prototype.hasOwnProperty.call(data, 'type')) {
+    if (!['STANDARD', 'VIP'].includes(String(data.type))) return 'Некорректный тип услуги';
+  } else if (forCreate) {
+    return 'Укажите тип услуги';
+  }
+
+  if (Object.prototype.hasOwnProperty.call(data, 'isActive')) {
+    data.isActive = Boolean(data.isActive);
+  } else if (forCreate) {
+    data.isActive = true;
+  }
+
+  return null;
+}
+
+function normalizeAndValidateReviewUpdate(data) {
+  if (!Object.prototype.hasOwnProperty.call(data, 'status')) {
+    return 'Можно обновлять только статус отзыва';
+  }
+  if (!['PENDING', 'APPROVED', 'REJECTED'].includes(String(data.status))) {
+    return 'Некорректный статус отзыва';
+  }
+  return null;
 }
 
 function mapBookingForConfirmation(booking) {
@@ -235,18 +350,69 @@ app.get('/api/services', async (_req, res) => {
 });
 
 app.post('/api/services', authenticate, requireRole('ADMIN'), async (req, res) => {
-  const service = await prisma.service.create({ data: req.body });
-  res.json(service);
+  try {
+    const data = pickServiceData(req.body);
+    const validationError = normalizeAndValidateServiceData(data, { forCreate: true });
+    if (validationError) {
+      return res.status(400).json({ success: false, error: validationError });
+    }
+
+    const service = await prisma.service.create({ data });
+    await writeAuditLog({
+      actor: getAuditActor(req),
+      action: 'service.create',
+      entity: 'Service',
+      entityId: service.id,
+    });
+    return res.json(service);
+  } catch (error) {
+    return internalServerError(res, 'Не удалось создать услугу', error, 'create service');
+  }
 });
 
 app.put('/api/services/:id', authenticate, requireRole('ADMIN'), async (req, res) => {
-  const service = await prisma.service.update({ where: { id: req.params.id }, data: req.body });
-  res.json(service);
+  try {
+    const data = pickServiceData(req.body);
+    if (Object.keys(data).length === 0) {
+      return res.status(400).json({ success: false, error: 'Нет полей для обновления' });
+    }
+    const validationError = normalizeAndValidateServiceData(data, { forCreate: false });
+    if (validationError) {
+      return res.status(400).json({ success: false, error: validationError });
+    }
+
+    const service = await prisma.service.update({ where: { id: req.params.id }, data });
+    await writeAuditLog({
+      actor: getAuditActor(req),
+      action: 'service.update',
+      entity: 'Service',
+      entityId: service.id,
+    });
+    return res.json(service);
+  } catch (error) {
+    if (error?.code === 'P2025') {
+      return res.status(404).json({ success: false, error: 'Услуга не найдена' });
+    }
+    return internalServerError(res, 'Не удалось обновить услугу', error, 'update service');
+  }
 });
 
 app.delete('/api/services/:id', authenticate, requireRole('ADMIN'), async (req, res) => {
-  await prisma.service.delete({ where: { id: req.params.id } });
-  res.json({ success: true });
+  try {
+    await prisma.service.delete({ where: { id: req.params.id } });
+    await writeAuditLog({
+      actor: getAuditActor(req),
+      action: 'service.delete',
+      entity: 'Service',
+      entityId: req.params.id,
+    });
+    return res.json({ success: true });
+  } catch (error) {
+    if (error?.code === 'P2025') {
+      return res.status(404).json({ success: false, error: 'Услуга не найдена' });
+    }
+    return internalServerError(res, 'Не удалось удалить услугу', error, 'delete service');
+  }
 });
 
 // в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ
@@ -280,6 +446,13 @@ app.post('/api/masters', authenticate, requireRole('ADMIN'), async (req, res) =>
       const user = await tx.user.create({ data: userPayload.data });
       const master = await tx.master.create({ data: { ...data, userId: user.id } });
       return { master, user: mapUser(user) };
+    });
+
+    await writeAuditLog({
+      actor: getAuditActor(req),
+      action: 'master.create',
+      entity: 'Master',
+      entityId: result.master.id,
     });
 
     res.json(result);
@@ -359,6 +532,13 @@ app.put('/api/masters/:id', authenticate, requireMasterAccess, async (req, res) 
       return { master, user };
     });
 
+    await writeAuditLog({
+      actor: getAuditActor(req),
+      action: 'master.update',
+      entity: 'Master',
+      entityId: result.master.id,
+    });
+
     res.json(result);
   } catch (error) {
     if (error?.code === 'MASTER_USER_VALIDATION') {
@@ -401,6 +581,13 @@ app.delete('/api/masters/:id', authenticate, requireRole('ADMIN'), async (req, r
       }
       await tx.master.delete({ where: { id: req.params.id } });
       return deletedUserIds;
+    });
+
+    await writeAuditLog({
+      actor: getAuditActor(req),
+      action: 'master.delete',
+      entity: 'Master',
+      entityId: req.params.id,
     });
 
     return res.json({ success: true, deletedUserIds: result });
@@ -455,10 +642,30 @@ app.put('/api/bookings/:id', authenticate, requireMasterAccess, async (req, res)
         return res.status(400).json({ success: false, error: 'Некорректный статус записи' });
       }
     }
+    if (Object.prototype.hasOwnProperty.call(data, 'clientPhone')) {
+      const normalizedPhone = normalizeClientPhone(data.clientPhone);
+      if (!normalizedPhone) {
+        return res.status(400).json({ success: false, error: 'Некорректный телефон клиента' });
+      }
+      data.clientPhone = normalizedPhone;
+    }
+    if (Object.prototype.hasOwnProperty.call(data, 'clientEmail')) {
+      const normalizedEmail = normalizeClientEmail(data.clientEmail);
+      if (normalizedEmail && !isValidEmail(normalizedEmail)) {
+        return res.status(400).json({ success: false, error: 'Некорректный email клиента' });
+      }
+      data.clientEmail = normalizedEmail;
+    }
     if (Object.keys(data).length === 0) {
       return res.status(400).json({ success: false, error: 'Нет доступных полей для обновления' });
     }
     const booking = await prisma.booking.update({ where: { id: req.params.id }, data });
+    await writeAuditLog({
+      actor: getAuditActor(req),
+      action: 'booking.update',
+      entity: 'Booking',
+      entityId: booking.id,
+    });
     res.json(mapBooking(booking));
   } catch (error) {
     if (error?.code === 'P2025') {
@@ -469,7 +676,7 @@ app.put('/api/bookings/:id', authenticate, requireMasterAccess, async (req, res)
 });
 
 // в”Ђв”Ђ POST /api/booking-slots вЂ” calculate available start times в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
-app.post('/api/booking-slots', async (req, res) => {
+app.post('/api/booking-slots', bookingSlotsRateLimiter, async (req, res) => {
   try {
     const { date, timingMode, services } = req.body ?? {};
 
@@ -784,7 +991,19 @@ app.get('/api/reviews', async (req, res) => {
 
 app.put('/api/reviews/:id', authenticate, requireRole('ADMIN'), async (req, res) => {
   try {
-    const review = await prisma.review.update({ where: { id: req.params.id }, data: req.body });
+    const data = pickAllowedFields(req.body ?? {}, REVIEW_ALLOWED_FIELDS);
+    const validationError = normalizeAndValidateReviewUpdate(data);
+    if (validationError) {
+      return res.status(400).json({ success: false, error: validationError });
+    }
+
+    const review = await prisma.review.update({ where: { id: req.params.id }, data });
+    await writeAuditLog({
+      actor: getAuditActor(req),
+      action: 'review.update',
+      entity: 'Review',
+      entityId: review.id,
+    });
     res.json(mapReview(review));
   } catch (error) {
     if (error?.code === 'P2025') {
@@ -816,7 +1035,7 @@ app.get('/api/waitlist', authenticate, requireRole('ADMIN'), async (_req, res) =
 // USERS вЂ” auth
 // в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ
 
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', loginRateLimiter, async (req, res) => {
   const { email, password, role } = req.body;
   const user = await prisma.user.findFirst({ where: { email, role, isActive: true } });
   if (!user || !verifyPassword(String(password ?? ''), user.password)) {
@@ -1256,10 +1475,14 @@ function normalizeMasterUserPayload(rawUser, options = {}) {
 
   if (forCreate || !userId) {
     if (!passwordRaw) return { error: 'Укажите пароль для аккаунта мастера' };
-    if (passwordRaw.length < 4) return { error: 'Пароль аккаунта мастера должен содержать минимум 4 символа' };
+    if (passwordRaw.length < MIN_MASTER_PASSWORD_LENGTH) {
+      return { error: `Пароль аккаунта мастера должен содержать минимум ${MIN_MASTER_PASSWORD_LENGTH} символов` };
+    }
     normalized.password = hashPassword(passwordRaw);
   } else if (passwordRaw) {
-    if (passwordRaw.length < 4) return { error: 'Пароль аккаунта мастера должен содержать минимум 4 символа' };
+    if (passwordRaw.length < MIN_MASTER_PASSWORD_LENGTH) {
+      return { error: `Пароль аккаунта мастера должен содержать минимум ${MIN_MASTER_PASSWORD_LENGTH} символов` };
+    }
     normalized.password = hashPassword(passwordRaw);
   }
 

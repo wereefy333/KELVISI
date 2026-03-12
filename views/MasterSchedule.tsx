@@ -9,9 +9,15 @@ interface MasterScheduleProps {
   onStatusChange: (id: string, status: Booking['status']) => void;
 }
 
+function getTodayIsoDate() {
+  const now = new Date();
+  const offsetMs = now.getTimezoneOffset() * 60 * 1000;
+  return new Date(now.getTime() - offsetMs).toISOString().split('T')[0];
+}
+
 export const MasterSchedule: React.FC<MasterScheduleProps> = ({ bookings, master, onStatusChange }) => {
   const [viewMode, setViewMode] = useState<'day' | 'week'>('day');
-  const [selectedDate, setSelectedDate] = useState('2026-02-11');
+  const [selectedDate, setSelectedDate] = useState(getTodayIsoDate);
   
   // Filter bookings for this master
   const masterBookings = master 

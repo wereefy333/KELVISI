@@ -391,8 +391,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         setError('Чтобы создать аккаунт для мастера, укажите email и пароль.');
         return;
       }
-      if (normalizedPassword && normalizedPassword.length < 4) {
-        setError('Пароль аккаунта должен содержать минимум 4 символа.');
+      if (normalizedPassword && normalizedPassword.length < 8) {
+        setError('Пароль аккаунта должен содержать минимум 8 символов.');
         return;
       }
 
@@ -1087,7 +1087,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <Edit2 size={16} />
                     </button>
                     <button 
-                      onClick={() => onDeleteService(service.id)}
+                      onClick={() => {
+                        const confirmed = window.confirm(`Удалить услугу "${service.name}"?`);
+                        if (confirmed) onDeleteService(service.id);
+                      }}
                       className="p-2 text-zinc-500 hover:text-red-500 hover:bg-zinc-800 rounded transition-colors"
                     >
                       <Trash2 size={16} />

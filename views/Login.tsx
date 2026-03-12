@@ -8,7 +8,7 @@ interface LoginProps {
   showDemoCredentials?: boolean;
 }
 
-export const Login: React.FC<LoginProps> = ({ onLogin, users, showDemoCredentials = true }) => {
+export const Login: React.FC<LoginProps> = ({ onLogin, users, showDemoCredentials = false }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -113,7 +113,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, users, showDemoCredential
             </button>
           </form>
 
-          {showDemoCredentials && authUsers.some(user => user.password) && (
+          {import.meta.env.DEV && showDemoCredentials && authUsers.some(user => user.password) && (
             <div className="mt-8 pt-6 border-t border-zinc-800">
               <p className="text-xs text-zinc-400 mb-4 font-medium">ДЕМО УЧЕТНЫЕ ДАННЫЕ:</p>
               <div className="space-y-2">
