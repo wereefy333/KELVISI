@@ -1,0 +1,142 @@
+generator client {
+    provider = "prisma-client-js"
+}
+
+datasource db {
+    provider = "postgresql"
+    url      = env("DATABASE_URL")
+}
+
+// ── Enums ──────────────────────────────────────────────────────────────────────
+
+enum Role {
+    CLIENT
+    MASTER
+    ADMIN
+}
+
+enum ServiceCategory {
+    MEN
+    WOMEN
+}
+
+enum ServiceType {
+    STANDARD
+    VIP
+}
+
+enum MasterLevel {
+    JUNIOR
+    SENIOR
+    TOP
+}
+
+enum BookingStatus {
+    PENDING
+    PENDING_EMAIL
+    CONFIRMED
+    IN_PROGRESS
+    COMPLETED
+    CANCELLED
+    NO_SHOW
+}
+
+enum ReviewStatus {
+    PENDING
+    APPROVED
+    REJECTED
+}
+
+// ── Models ─────────────────────────────────────────────────────────────────────
+
+model User {
+    id        String   @id @default(cuid())
+    email     String   @unique
+    password  String
+    name      String
+    role      Role
+    phone     String?
+    isActive  Boolean  @default(true)
+    createdAt DateTime @default(now())
+}
+
+model Service {
+    id              String          @id @default(cuid())
+    name            String
+    description     String
+    price           Int
+    durationMinutes Int
+    category        ServiceCategory
+    type            ServiceType
+    isActive        Boolean         @default(true)
+}
+
+model Master {
+    id              String            @id @default(cuid())
+    name            String
+    role            String // display title: "Top Barber", "Art Director" ...
+    rating          Float
+    imageUrl        String
+    bio             String?
+    experience      String?
+    languages       String?
+    specialization  ServiceCategory[]
+    level           MasterLevel
+    priceMultiplier Float
+    workSchedule    Json? // { "1": {"start": "10:00", "end": "20:00"}, ... }
+    isActive        Boolean           @default(true)
+    bookings        Booking[]
+}
+
+model Booking {
+    id           String        @id @default(cuid())
+    clientName   String
+    clientPhone  String
+    clientEmail  String?
+    serviceId    String // denormalized service name string
+    masterId     String
+    master       Master        @relation(fields: [masterId], references: [id])
+    date         String // ISO date: "2026-10-24"
+    time         String // HH:mm: "14:00"
+    status       BookingStatus @default(PENDING)
+    notes        String?
+    totalPrice   Int
+    confirmToken String?       @unique
+    createdAt    DateTime      @default(now())
+    reviews      Review[]
+}
+
+model Review {
+    id         String       @id @default(cuid())
+    clientName String
+    text       String
+    rating     Int
+    avatarUrl  String?
+    bookingId  String?
+    booking    Booking?     @relation(fields: [bookingId], references: [id])
+    status     ReviewStatus @default(PENDING)
+    createdAt  DateTime     @default(now())
+}
+
+model Client {
+    id          String   @id @default(cuid())
+    name        String
+    phone       String   @unique
+    email       String?
+    notes       String?
+    totalVisits Int      @default(0)
+    totalSpent  Int      @default(0)
+    lastVisit   String?
+    createdAt   DateTime @default(now())
+}
+
+model WaitlistEntry {
+    id             String   @id @default(cuid())
+    clientName     String
+    clientPhone    String
+    masterId       String
+    serviceIds     String[]
+    preferredDates String[]
+    notified       Boolean  @default(false)
+    createdAt      DateTime @default(now())
+}

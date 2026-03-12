@@ -1,0 +1,40 @@
+{
+  "name": "lumière-|-luxury-salon-system",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "server": "node server/server.mjs",
+    "db:migrate": "prisma migrate dev",
+    "db:seed": "prisma db seed",
+    "db:studio": "prisma studio",
+    "db:generate": "prisma generate"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.mjs"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.2",
+    "@types/react-router-dom": "^5.3.3",
+    "cors": "^2.8.6",
+    "express": "^4.22.1",
+    "lucide-react": "^0.563.0",
+    "nodemailer": "^6.10.1",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-router-dom": "^7.13.0",
+    "recharts": "^3.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@types/react": "^19.2.13",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.0.0",
+    "prisma": "^6.19.2",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0"
+  }
+}
