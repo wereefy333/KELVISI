@@ -3,7 +3,7 @@ export type Role = 'CLIENT' | 'MASTER' | 'ADMIN';
 export interface User {
   id: string;
   email: string;
-  password: string; // hashed in production
+  password?: string;
   name: string;
   role: Role;
   phone?: string;
@@ -45,6 +45,7 @@ export interface Service {
 
 export interface Master {
   id: string;
+  userId?: string | null;
   name: string;
   role: string;
   rating: number;

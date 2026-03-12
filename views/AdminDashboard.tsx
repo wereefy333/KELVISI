@@ -310,7 +310,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const MasterModal = ({ master, onClose }: { master: Master | null; onClose: () => void }) => {
     const linkedUser = master
-      ? users.find((user) => user.role === 'MASTER' && user.name === master.name) || null
+      ? users.find((user) => user.role === 'MASTER' && user.id === master.userId) || null
       : null;
     const [formData, setFormData] = useState<MasterFormState>(createInitialMasterForm(master, linkedUser));
     const [error, setError] = useState('');

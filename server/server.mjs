@@ -1,7 +1,7 @@
 ﻿import express from 'express';
 import nodemailer from 'nodemailer';
 import cors from 'cors';
-import { randomUUID } from 'crypto';
+import { createHmac, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'crypto';
 import { PrismaClient } from '@prisma/client';
 
 if (typeof process.loadEnvFile === 'function') {
@@ -14,6 +14,9 @@ const prisma = new PrismaClient();
 const PORT = Number(process.env.PORT || 3001);
 const HOST = process.env.HOST || '0.0.0.0';
 const APP_PUBLIC_URL = (process.env.APP_PUBLIC_URL || 'http://localhost:4000').replace(/\/+$/, '');
+const AUTH_SECRET = process.env.AUTH_SECRET || 'dev-only-change-me';
+const AUTH_TOKEN_TTL_MS = Number(process.env.AUTH_TOKEN_TTL_MS || 12 * 60 * 60 * 1000);
+const PASSWORD_HASH_PREFIX = 'scrypt';
 const CORS_ORIGINS = (process.env.CORS_ORIGINS || 'http://localhost:4000,http://127.0.0.1:4000')
   .split(',')
   .map(origin => origin.trim())
@@ -26,35 +29,201 @@ if (!CORS_ORIGINS.includes(APP_PUBLIC_URL)) {
 app.use(cors({ origin: CORS_ORIGINS }));
 app.use(express.json());
 
-// в”Ђв”Ђ Gmail transporter в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
-// SMTP transporter (configurable via env)
-const MAIL_HOST = process.env.MAIL_HOST || 'smtp.gmail.com';
+function unauthorized(res, error = 'Требуется авторизация') {
+  return res.status(401).json({ success: false, error });
+}
+
+function forbidden(res, error = 'Недостаточно прав') {
+  return res.status(403).json({ success: false, error });
+}
+
+function signTokenPayload(payload) {
+  return createHmac('sha256', AUTH_SECRET).update(payload).digest('base64url');
+}
+
+function encodeAuthToken(user) {
+  const payload = Buffer.from(JSON.stringify({
+    sub: user.id,
+    role: user.role,
+    name: user.name,
+    exp: Date.now() + AUTH_TOKEN_TTL_MS,
+  })).toString('base64url');
+  const signature = signTokenPayload(payload);
+  return `${payload}.${signature}`;
+}
+
+function decodeAuthToken(token) {
+  if (typeof token !== 'string') return null;
+  const [payload, signature] = token.split('.');
+  if (!payload || !signature) return null;
+
+  const expectedSignature = signTokenPayload(payload);
+  const expectedBuffer = Buffer.from(expectedSignature);
+  const receivedBuffer = Buffer.from(signature);
+  if (expectedBuffer.length !== receivedBuffer.length) return null;
+  if (!timingSafeEqual(expectedBuffer, receivedBuffer)) return null;
+
+  try {
+    const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    if (!parsed?.sub || !parsed?.role || !parsed?.exp) return null;
+    if (Number(parsed.exp) < Date.now()) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+async function authenticate(req, res, next) {
+  const authHeader = req.headers.authorization || '';
+  const match = /^Bearer\s+(.+)$/.exec(authHeader);
+  if (!match) return unauthorized(res);
+
+  const tokenPayload = decodeAuthToken(match[1]);
+  if (!tokenPayload) return unauthorized(res, 'Сессия недействительна или истекла');
+
+  const user = await prisma.user.findUnique({ where: { id: tokenPayload.sub } });
+  if (!user || !user.isActive) return unauthorized(res, 'Пользователь не найден или деактивирован');
+
+  req.auth = { user };
+  return next();
+}
+
+function requireRole(...roles) {
+  return (req, res, next) => {
+    if (!req.auth?.user) return unauthorized(res);
+    if (!roles.includes(req.auth.user.role)) return forbidden(res);
+    return next();
+  };
+}
+
+async function resolveMasterForUser(user) {
+  if (!user || user.role !== 'MASTER') return null;
+  return prisma.master.findFirst({ where: { userId: user.id, isActive: true } });
+}
+
+async function requireMasterAccess(req, res, next) {
+  if (!req.auth?.user) return unauthorized(res);
+  if (req.auth.user.role === 'ADMIN') return next();
+  if (req.auth.user.role !== 'MASTER') return forbidden(res);
+
+  const master = await resolveMasterForUser(req.auth.user);
+  if (!master) {
+    return forbidden(res, 'Для аккаунта мастера не найден связанный профиль');
+  }
+
+  req.auth.master = master;
+  return next();
+}
+
+function pickAllowedFields(source, allowedFields) {
+  const next = {};
+  for (const field of allowedFields) {
+    if (Object.prototype.hasOwnProperty.call(source, field) && source[field] !== undefined) {
+      next[field] = source[field];
+    }
+  }
+  return next;
+}
+
+function internalServerError(res, publicMessage, error, context) {
+  console.error(`✖ ${context}:`, error);
+  return res.status(500).json({ success: false, error: publicMessage });
+}
+
+function hashPassword(password) {
+  const salt = randomBytes(16).toString('hex');
+  const derivedKey = scryptSync(password, salt, 64).toString('hex');
+  return `${PASSWORD_HASH_PREFIX}$${salt}$${derivedKey}`;
+}
+
+function isPasswordHashed(password) {
+  return typeof password === 'string' && password.startsWith(`${PASSWORD_HASH_PREFIX}$`);
+}
+
+function verifyPassword(password, storedHash) {
+  if (typeof storedHash !== 'string' || !storedHash) return false;
+  if (!isPasswordHashed(storedHash)) {
+    return password === storedHash;
+  }
+
+  const [, salt, expectedKey] = storedHash.split('$');
+  if (!salt || !expectedKey) return false;
+  const derivedKey = scryptSync(password, salt, 64).toString('hex');
+  const expectedBuffer = Buffer.from(expectedKey, 'hex');
+  const receivedBuffer = Buffer.from(derivedKey, 'hex');
+  if (expectedBuffer.length !== receivedBuffer.length) return false;
+  return timingSafeEqual(expectedBuffer, receivedBuffer);
+}
+
+function normalizeClientName(value) {
+  const normalized = String(value ?? '').trim().replace(/\s+/g, ' ');
+  if (!normalized) return null;
+  return normalized.slice(0, 120);
+}
+
+function normalizeClientPhone(value) {
+  const normalized = String(value ?? '').trim();
+  if (!normalized) return null;
+  return normalized.slice(0, 40);
+}
+
+function normalizeClientEmail(value) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (!normalized) return null;
+  return normalized.slice(0, 254);
+}
+
+function isValidEmail(email) {
+  return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(email ?? ''));
+}
+
+function mapBookingForConfirmation(booking) {
+  return {
+    id: booking.id,
+    clientName: booking.clientName,
+    serviceId: booking.serviceId,
+    date: booking.date,
+    time: booking.time,
+    totalPrice: booking.totalPrice,
+    status: booking.status,
+  };
+}
+
+// SMTP transporter (strictly configured via env)
+const MAIL_HOST = (process.env.MAIL_HOST || '').trim();
 const MAIL_PORT = Number(process.env.MAIL_PORT || 465);
 const MAIL_SECURE = (process.env.MAIL_SECURE ?? String(MAIL_PORT === 465)).toLowerCase() === 'true';
-const MAIL_USER = process.env.MAIL_USER || 'lumierebot21@gmail.com';
-const MAIL_PASS = process.env.MAIL_PASS || 'lhpi xmxy iheu fjkz';
-const MAIL_FROM = process.env.MAIL_FROM || `"Lumiere Salon" <${MAIL_USER}>`;
+const MAIL_USER = (process.env.MAIL_USER || '').trim();
+const MAIL_PASS = process.env.MAIL_PASS || '';
+const MAIL_FROM = (process.env.MAIL_FROM || '').trim();
 const MAIL_CONNECTION_TIMEOUT_MS = Number(process.env.MAIL_CONNECTION_TIMEOUT_MS || 10000);
 const MAIL_SOCKET_TIMEOUT_MS = Number(process.env.MAIL_SOCKET_TIMEOUT_MS || 15000);
+const SMTP_ENABLED = Boolean(MAIL_HOST && MAIL_USER && MAIL_PASS && MAIL_FROM);
 
-const transporter = nodemailer.createTransport({
-  host: MAIL_HOST,
-  port: MAIL_PORT,
-  secure: MAIL_SECURE,
-  auth: { user: MAIL_USER, pass: MAIL_PASS },
-  connectionTimeout: MAIL_CONNECTION_TIMEOUT_MS,
-  greetingTimeout: MAIL_CONNECTION_TIMEOUT_MS,
-  socketTimeout: MAIL_SOCKET_TIMEOUT_MS,
-  tls: { servername: MAIL_HOST },
-});
+const transporter = SMTP_ENABLED
+  ? nodemailer.createTransport({
+      host: MAIL_HOST,
+      port: MAIL_PORT,
+      secure: MAIL_SECURE,
+      auth: { user: MAIL_USER, pass: MAIL_PASS },
+      connectionTimeout: MAIL_CONNECTION_TIMEOUT_MS,
+      greetingTimeout: MAIL_CONNECTION_TIMEOUT_MS,
+      socketTimeout: MAIL_SOCKET_TIMEOUT_MS,
+      tls: { servername: MAIL_HOST },
+    })
+  : null;
 
-transporter.verify()
-  .then(() => {
-    console.log(`SMTP ready: ${MAIL_HOST}:${MAIL_PORT} secure=${MAIL_SECURE}`);
-  })
-  .catch((err) => {
-    console.warn(`SMTP verify failed (${MAIL_HOST}:${MAIL_PORT}): ${err.message}`);
-  });
+if (SMTP_ENABLED) {
+  transporter.verify()
+    .then(() => {
+      console.log(`SMTP ready: ${MAIL_HOST}:${MAIL_PORT} secure=${MAIL_SECURE}`);
+    })
+    .catch((err) => {
+      console.warn(`SMTP verify failed (${MAIL_HOST}:${MAIL_PORT}): ${err.message}`);
+    });
+} else {
+  console.warn('SMTP disabled: set MAIL_HOST, MAIL_USER, MAIL_PASS and MAIL_FROM in env to enable booking confirmation emails.');
+}
 
 // в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ
 // SERVICES
@@ -65,17 +234,17 @@ app.get('/api/services', async (_req, res) => {
   res.json(services);
 });
 
-app.post('/api/services', async (req, res) => {
+app.post('/api/services', authenticate, requireRole('ADMIN'), async (req, res) => {
   const service = await prisma.service.create({ data: req.body });
   res.json(service);
 });
 
-app.put('/api/services/:id', async (req, res) => {
+app.put('/api/services/:id', authenticate, requireRole('ADMIN'), async (req, res) => {
   const service = await prisma.service.update({ where: { id: req.params.id }, data: req.body });
   res.json(service);
 });
 
-app.delete('/api/services/:id', async (req, res) => {
+app.delete('/api/services/:id', authenticate, requireRole('ADMIN'), async (req, res) => {
   await prisma.service.delete({ where: { id: req.params.id } });
   res.json({ success: true });
 });
@@ -89,7 +258,7 @@ app.get('/api/masters', async (_req, res) => {
   res.json(masters);
 });
 
-app.post('/api/masters', async (req, res) => {
+app.post('/api/masters', authenticate, requireRole('ADMIN'), async (req, res) => {
   try {
     const data = pickMasterData(req.body);
     const validationError = normalizeAndValidateMasterData(data, { forCreate: true });
@@ -108,8 +277,8 @@ app.post('/api/masters', async (req, res) => {
     }
 
     const result = await prisma.$transaction(async (tx) => {
-      const master = await tx.master.create({ data });
       const user = await tx.user.create({ data: userPayload.data });
+      const master = await tx.master.create({ data: { ...data, userId: user.id } });
       return { master, user: mapUser(user) };
     });
 
@@ -118,13 +287,21 @@ app.post('/api/masters', async (req, res) => {
     if (error?.code === 'P2002') {
       return res.status(409).json({ success: false, error: 'Email уже используется другим аккаунтом' });
     }
-    return res.status(500).json({ success: false, error: 'Не удалось создать мастера', details: error?.message || String(error) });
+    return internalServerError(res, 'Не удалось создать мастера', error, 'create master');
   }
 });
 
-app.put('/api/masters/:id', async (req, res) => {
+app.put('/api/masters/:id', authenticate, requireMasterAccess, async (req, res) => {
   try {
-    const data = pickMasterData(req.body);
+    const canManageAnyMaster = req.auth.user.role === 'ADMIN';
+    if (!canManageAnyMaster && req.auth.master.id !== req.params.id) {
+      return res.status(403).json({ success: false, error: 'Мастер может редактировать только свой профиль' });
+    }
+
+    const allowedFields = canManageAnyMaster
+      ? MASTER_ALLOWED_FIELDS
+      : ['bio', 'experience', 'languages'];
+    const data = pickMasterData(pickAllowedFields(req.body, allowedFields));
 
     if (Object.keys(data).length === 0) {
       return res.status(400).json({ success: false, error: 'Нет полей для обновления' });
@@ -136,16 +313,24 @@ app.put('/api/masters/:id', async (req, res) => {
     }
 
     const result = await prisma.$transaction(async (tx) => {
-      const master = await tx.master.update({ where: { id: req.params.id }, data });
-      const userPayload = normalizeMasterUserPayload(req.body?.user, {
+      let nextMasterData = data;
+      const rawUserPayload = canManageAnyMaster ? req.body?.user : undefined;
+      const userPayload = normalizeMasterUserPayload(rawUserPayload, {
         forCreate: false,
         required: false,
-        fallbackName: master.name,
-        fallbackIsActive: master.isActive,
+        fallbackName: req.body?.name ?? req.auth.master?.name ?? '',
+        fallbackIsActive: req.body?.isActive ?? req.auth.master?.isActive ?? true,
       });
       if (userPayload.error) {
         const err = new Error(userPayload.error);
         err.code = 'MASTER_USER_VALIDATION';
+        throw err;
+      }
+
+      const currentMaster = await tx.master.findUnique({ where: { id: req.params.id } });
+      if (!currentMaster) {
+        const err = new Error('Мастер не найден');
+        err.code = 'P2025';
         throw err;
       }
 
@@ -161,11 +346,15 @@ app.put('/api/masters/:id', async (req, res) => {
           const { id, ...userData } = userPayload.data;
           const updatedUser = await tx.user.update({ where: { id }, data: userData });
           user = mapUser(updatedUser);
+          nextMasterData = { ...nextMasterData, userId: updatedUser.id };
         } else {
           const createdUser = await tx.user.create({ data: userPayload.data });
           user = mapUser(createdUser);
+          nextMasterData = { ...nextMasterData, userId: createdUser.id };
         }
       }
+
+      const master = await tx.master.update({ where: { id: req.params.id }, data: nextMasterData });
 
       return { master, user };
     });
@@ -184,11 +373,11 @@ app.put('/api/masters/:id', async (req, res) => {
     if (error?.code === 'P2025') {
       return res.status(404).json({ success: false, error: 'Мастер не найден' });
     }
-    return res.status(500).json({ success: false, error: 'Не удалось обновить мастера', details: error?.message || String(error) });
+    return internalServerError(res, 'Не удалось обновить мастера', error, 'update master');
   }
 });
 
-app.delete('/api/masters/:id', async (req, res) => {
+app.delete('/api/masters/:id', authenticate, requireRole('ADMIN'), async (req, res) => {
   try {
     const bookingsCount = await prisma.booking.count({ where: { masterId: req.params.id } });
     if (bookingsCount > 0) {
@@ -205,15 +394,13 @@ app.delete('/api/masters/:id', async (req, res) => {
         err.code = 'P2025';
         throw err;
       }
-      const usersToDelete = await tx.user.findMany({
-        where: { role: 'MASTER', name: master.name },
-        select: { id: true },
-      });
-      if (usersToDelete.length > 0) {
-        await tx.user.deleteMany({ where: { id: { in: usersToDelete.map((item) => item.id) } } });
+      const deletedUserIds = [];
+      if (master.userId) {
+        await tx.user.delete({ where: { id: master.userId } });
+        deletedUserIds.push(master.userId);
       }
       await tx.master.delete({ where: { id: req.params.id } });
-      return usersToDelete.map((item) => item.id);
+      return deletedUserIds;
     });
 
     return res.json({ success: true, deletedUserIds: result });
@@ -221,7 +408,7 @@ app.delete('/api/masters/:id', async (req, res) => {
     if (error?.code === 'P2025') {
       return res.status(404).json({ success: false, error: 'Мастер не найден' });
     }
-    return res.status(500).json({ success: false, error: 'Не удалось удалить мастера', details: error?.message || String(error) });
+    return internalServerError(res, 'Не удалось удалить мастера', error, 'delete master');
   }
 });
 
@@ -229,28 +416,47 @@ app.delete('/api/masters/:id', async (req, res) => {
 // BOOKINGS
 // в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ
 
-app.get('/api/bookings', async (_req, res) => {
+app.get('/api/bookings', authenticate, requireMasterAccess, async (req, res) => {
+  const where = req.auth.user.role === 'ADMIN'
+    ? { status: { not: 'PENDING_EMAIL' } }
+    : { status: { not: 'PENDING_EMAIL' }, masterId: req.auth.master.id };
   const bookings = await prisma.booking.findMany({
-    where: { status: { not: 'PENDING_EMAIL' } },
+    where,
     orderBy: { createdAt: 'desc' },
   });
   res.json(bookings.map(mapBooking));
 });
 
-app.get('/api/bookings/:id', async (req, res) => {
+app.get('/api/bookings/:id', authenticate, requireMasterAccess, async (req, res) => {
   const booking = await prisma.booking.findUnique({ where: { id: req.params.id } });
   if (!booking) return res.status(404).json({ error: 'Not found' });
+  if (req.auth.user.role === 'MASTER' && booking.masterId !== req.auth.master.id) {
+    return forbidden(res, 'Эта запись недоступна данному мастеру');
+  }
   res.json(mapBooking(booking));
 });
 
-app.put('/api/bookings/:id', async (req, res) => {
+app.put('/api/bookings/:id', authenticate, requireMasterAccess, async (req, res) => {
   try {
-    const data = req.body ?? {};
+    const allowedFields = req.auth.user.role === 'ADMIN'
+      ? ['clientName', 'clientPhone', 'clientEmail', 'serviceId', 'masterId', 'date', 'time', 'status', 'notes', 'totalPrice']
+      : ['status'];
+    const data = pickAllowedFields(req.body ?? {}, allowedFields);
+    const existingBooking = await prisma.booking.findUnique({ where: { id: req.params.id } });
+    if (!existingBooking) {
+      return res.status(404).json({ success: false, error: 'Запись не найдена' });
+    }
+    if (req.auth.user.role === 'MASTER' && existingBooking.masterId !== req.auth.master.id) {
+      return forbidden(res, 'Эта запись недоступна данному мастеру');
+    }
     if (Object.prototype.hasOwnProperty.call(data, 'status')) {
       const allowedStatuses = ['PENDING', 'PENDING_EMAIL', 'CONFIRMED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'NO_SHOW'];
       if (!allowedStatuses.includes(data.status)) {
         return res.status(400).json({ success: false, error: 'Некорректный статус записи' });
       }
+    }
+    if (Object.keys(data).length === 0) {
+      return res.status(400).json({ success: false, error: 'Нет доступных полей для обновления' });
     }
     const booking = await prisma.booking.update({ where: { id: req.params.id }, data });
     res.json(mapBooking(booking));
@@ -258,7 +464,7 @@ app.put('/api/bookings/:id', async (req, res) => {
     if (error?.code === 'P2025') {
       return res.status(404).json({ success: false, error: 'Запись не найдена' });
     }
-    return res.status(500).json({ success: false, error: 'Не удалось обновить запись', details: error?.message || String(error) });
+    return internalServerError(res, 'Не удалось обновить запись', error, 'update booking');
   }
 });
 
@@ -360,21 +566,29 @@ app.post('/api/booking-slots', async (req, res) => {
 
     return res.json({ success: true, slots });
   } catch (error) {
-    console.error('✖ /api/booking-slots error:', error);
-    return res.status(500).json({
-      success: false,
-      error: 'Ошибка расчета слотов на сервере',
-      details: error?.message || String(error),
-    });
+    return internalServerError(res, 'Ошибка расчета слотов на сервере', error, 'calculate booking slots');
   }
 });
 
 // в”Ђв”Ђ POST /api/bookings вЂ” create + send confirmation email в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 app.post('/api/bookings', async (req, res) => {
   const { clientName, clientPhone, clientEmail, serviceId, masterId, date, time, totalPrice, notes } = req.body;
+  const normalizedClientName = normalizeClientName(clientName);
+  const normalizedClientPhone = normalizeClientPhone(clientPhone);
+  const normalizedClientEmail = normalizeClientEmail(clientEmail);
+  const normalizedNotes = normalizeOptionalString(notes, 1000);
 
-  if (!clientEmail) {
+  if (!normalizedClientName) {
+    return res.status(400).json({ success: false, error: 'Имя клиента обязательно' });
+  }
+  if (!normalizedClientPhone) {
+    return res.status(400).json({ success: false, error: 'Телефон клиента обязателен' });
+  }
+  if (!normalizedClientEmail) {
     return res.status(400).json({ success: false, error: 'Email клиента обязателен' });
+  }
+  if (!isValidEmail(normalizedClientEmail)) {
+    return res.status(400).json({ success: false, error: 'Некорректный email клиента' });
   }
   if (!date || !time) {
     return res.status(400).json({ success: false, error: 'Дата и время обязательны' });
@@ -410,46 +624,77 @@ app.post('/api/bookings', async (req, res) => {
   const knownServices = await prisma.service.findMany({ select: { name: true, durationMinutes: true } });
   const durationByServiceName = new Map(knownServices.map(s => [s.name, s.durationMinutes]));
   const requestedDurations = serviceNames.map(n => durationByServiceName.get(n)).filter(Number.isFinite);
-  const isParallel = /параллел|4 руки|в 4 руки/i.test(String(notes || ''));
+  const isParallel = /параллел|4 руки|в 4 руки/i.test(String(normalizedNotes || ''));
   const requestedDuration = requestedDurations.length > 0
     ? (isParallel ? Math.max(...requestedDurations) : requestedDurations.reduce((a, b) => a + b, 0))
     : 60;
   const requestedStart = toMinutes(time);
   const requestedEnd = requestedStart + requestedDuration;
 
-  const activeStatuses = ['PENDING', 'PENDING_EMAIL', 'CONFIRMED', 'IN_PROGRESS'];
-  const existingBookings = await prisma.booking.findMany({
-    where: { date, masterId, status: { in: activeStatuses } },
-  });
-  const hasConflict = existingBookings.some(b => {
-    const bStart = toMinutes(b.time);
-    const bDuration = inferBookingDurationMinutes(b, durationByServiceName);
-    const bEnd = bStart + bDuration;
-    return requestedStart < bEnd && bStart < requestedEnd;
-  });
-  if (hasConflict) {
-    return res.status(409).json({ success: false, error: 'Выбранное время уже занято. Пожалуйста, выберите другой слот.' });
-  }
-
   const token = randomUUID();
 
-  const booking = await prisma.booking.create({
-    data: {
-      clientName, clientPhone, clientEmail, serviceId, masterId,
-      date, time,
-      totalPrice: computedPrice,
-      notes: notes || null,
-      status: 'PENDING_EMAIL',
-      confirmToken: token,
-    },
-  });
+  if (!SMTP_ENABLED || !transporter) {
+    return res.status(503).json({
+      success: false,
+      error: 'Почтовый сервис не настроен. Укажите MAIL_HOST, MAIL_USER, MAIL_PASS и MAIL_FROM в переменных окружения.',
+    });
+  }
+
+  const activeStatuses = ['PENDING', 'PENDING_EMAIL', 'CONFIRMED', 'IN_PROGRESS'];
+
+  let booking;
+  try {
+    booking = await prisma.$transaction(async (tx) => {
+      await acquireBookingSlotLock(tx, masterId, date);
+
+      const existingBookings = await tx.booking.findMany({
+        where: { date, masterId, status: { in: activeStatuses } },
+      });
+      const hasConflict = bookingHasConflict(existingBookings, {
+        requestedStart,
+        requestedEnd,
+        durationByServiceName,
+      });
+
+      if (hasConflict) {
+        const error = new Error('Выбранное время уже занято. Пожалуйста, выберите другой слот.');
+        error.code = 'BOOKING_SLOT_CONFLICT';
+        throw error;
+      }
+
+      return tx.booking.create({
+        data: {
+          clientName: normalizedClientName,
+          clientPhone: normalizedClientPhone,
+          clientEmail: normalizedClientEmail,
+          serviceId,
+          masterId,
+          date, time,
+          totalPrice: computedPrice,
+          notes: normalizedNotes,
+          status: 'PENDING_EMAIL',
+          confirmToken: token,
+        },
+      });
+    }, {
+      isolationLevel: 'Serializable',
+    });
+  } catch (error) {
+    if (error?.code === 'BOOKING_SLOT_CONFLICT' || error?.code === 'P2034') {
+      return res.status(409).json({
+        success: false,
+        error: 'Выбранное время уже занято. Пожалуйста, выберите другой слот.',
+      });
+    }
+    return internalServerError(res, 'Не удалось создать запись. Попробуйте еще раз.', error, 'create booking transaction');
+  }
 
   const confirmUrl = `${APP_PUBLIC_URL}/confirm?token=${token}`;
   const htmlBody = `
     <div style="font-family: Georgia, serif; background: #0a0a0a; color: #e4e4e7; padding: 48px 32px; max-width: 580px; margin: 0 auto; border: 1px solid #27272a;">
       <h1 style="color: #f59e0b; font-size: 32px; letter-spacing: 6px; text-transform: uppercase; margin: 0 0 4px;">Lumière</h1>
       <p style="color: #71717a; font-size: 12px; letter-spacing: 4px; text-transform: uppercase; margin: 0 0 40px;">Luxury Hair Salon</p>
-      <p style="font-size: 16px;">Здравствуйте, <strong style="color: #fff;">${clientName}</strong>!</p>
+      <p style="font-size: 16px;">Здравствуйте, <strong style="color: #fff;">${normalizedClientName}</strong>!</p>
       <p style="color: #a1a1aa; line-height: 1.6;">Вы записались в салон <strong style="color: #fff;">Lumière</strong>. Для активации брони нажмите кнопку ниже.</p>
       <div style="background: #18181b; border-left: 3px solid #f59e0b; padding: 20px 24px; margin: 32px 0; border-radius: 2px;">
         <p style="margin: 0 0 10px; font-size: 14px;"><span style="color: #71717a;">Услуга:&nbsp;</span><strong>${serviceId}</strong></p>
@@ -474,16 +719,28 @@ app.post('/api/bookings', async (req, res) => {
   try {
     await transporter.sendMail({
       from: MAIL_FROM,
-      to: clientEmail,
+      to: normalizedClientEmail,
       subject: '✂ Подтвердите запись в Lumière',
       html: htmlBody,
     });
-    console.log(`✓ Email sent -> ${clientEmail} | token: ${token}`);
+    console.log(`✓ Email sent -> ${normalizedClientEmail} | token: ${token}`);
     res.json({ success: true, bookingId: booking.id });
   } catch (err) {
     console.error('✖ Email error:', err.message);
+    try {
+      await prisma.booking.update({
+        where: { id: booking.id },
+        data: {
+          status: 'CANCELLED',
+          confirmToken: null,
+          notes: appendSystemNote(booking.notes, 'SMTP_ERROR: confirmation email was not sent; booking auto-cancelled.'),
+        },
+      });
+    } catch (cleanupError) {
+      console.error('✖ Booking cleanup after email failure error:', cleanupError.message);
+    }
     const networkHint = `SMTP ${MAIL_HOST}:${MAIL_PORT} недоступен. Для этой сети обычно работают smtp.yandex.ru:465 или smtp.mail.ru:465.`;
-    res.status(500).json({ success: false, error: `Не удалось отправить письмо: ${err.message}. ${networkHint}` });
+    res.status(500).json({ success: false, error: `Не удалось отправить письмо. ${networkHint}` });
   }
 });
 
@@ -504,28 +761,44 @@ app.get('/api/confirm-booking', async (req, res) => {
   const updated = await prisma.booking.update({ where: { id: booking.id }, data: { status: 'CONFIRMED' } });
 
   console.log(`✓ Booking confirmed: ${updated.id} (${updated.clientName})`);
-  res.json({ success: true, booking: mapBooking(updated), alreadyConfirmed });
+  res.json({ success: true, booking: mapBookingForConfirmation(updated), alreadyConfirmed });
 });
 
 // в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ
 // REVIEWS
 // в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ
 
-app.get('/api/reviews', async (_req, res) => {
-  const reviews = await prisma.review.findMany({ orderBy: { createdAt: 'desc' } });
+app.get('/api/reviews', async (req, res) => {
+  const authHeader = req.headers.authorization || '';
+  const match = /^Bearer\s+(.+)$/.exec(authHeader);
+  const tokenPayload = match ? decodeAuthToken(match[1]) : null;
+  const isAdmin = tokenPayload
+    ? await prisma.user.findFirst({ where: { id: tokenPayload.sub, role: 'ADMIN', isActive: true } })
+    : null;
+  const reviews = await prisma.review.findMany({
+    where: isAdmin ? undefined : { status: 'APPROVED' },
+    orderBy: { createdAt: 'desc' },
+  });
   res.json(reviews.map(mapReview));
 });
 
-app.put('/api/reviews/:id', async (req, res) => {
-  const review = await prisma.review.update({ where: { id: req.params.id }, data: req.body });
-  res.json(mapReview(review));
+app.put('/api/reviews/:id', authenticate, requireRole('ADMIN'), async (req, res) => {
+  try {
+    const review = await prisma.review.update({ where: { id: req.params.id }, data: req.body });
+    res.json(mapReview(review));
+  } catch (error) {
+    if (error?.code === 'P2025') {
+      return res.status(404).json({ success: false, error: 'Отзыв не найден' });
+    }
+    return internalServerError(res, 'Не удалось обновить отзыв', error, 'update review');
+  }
 });
 
 // в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ
 // CLIENTS
 // в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ
 
-app.get('/api/clients', async (_req, res) => {
+app.get('/api/clients', authenticate, requireRole('ADMIN'), async (_req, res) => {
   const clients = await prisma.client.findMany({ orderBy: { name: 'asc' } });
   res.json(clients.map(mapClient));
 });
@@ -534,7 +807,7 @@ app.get('/api/clients', async (_req, res) => {
 // WAITLIST
 // в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ
 
-app.get('/api/waitlist', async (_req, res) => {
+app.get('/api/waitlist', authenticate, requireRole('ADMIN'), async (_req, res) => {
   const entries = await prisma.waitlistEntry.findMany({ orderBy: { createdAt: 'desc' } });
   res.json(entries.map(mapWaitlist));
 });
@@ -545,12 +818,23 @@ app.get('/api/waitlist', async (_req, res) => {
 
 app.post('/api/auth/login', async (req, res) => {
   const { email, password, role } = req.body;
-  const user = await prisma.user.findFirst({ where: { email, password, role, isActive: true } });
-  if (!user) return res.status(401).json({ success: false, error: 'Неверный логин или пароль' });
-  res.json({ success: true, user: mapUser(user) });
+  const user = await prisma.user.findFirst({ where: { email, role, isActive: true } });
+  if (!user || !verifyPassword(String(password ?? ''), user.password)) {
+    return res.status(401).json({ success: false, error: 'Неверный логин или пароль' });
+  }
+
+  if (!isPasswordHashed(user.password)) {
+    const hashedPassword = hashPassword(String(password ?? ''));
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { password: hashedPassword },
+    });
+    user.password = hashedPassword;
+  }
+  res.json({ success: true, user: mapUser(user), token: encodeAuthToken(user) });
 });
 
-app.get('/api/users', async (req, res) => {
+app.get('/api/users', authenticate, requireRole('ADMIN'), async (req, res) => {
   const { role } = req.query;
   const users = await prisma.user.findMany({
     where: role ? { role: String(role), isActive: true } : { isActive: true },
@@ -563,7 +847,10 @@ app.get('/api/users', async (req, res) => {
 // Helpers
 // в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ
 
-function mapBooking(b)  { return { ...b, createdAt: b.createdAt?.toISOString() }; }
+function mapBooking(b)  {
+  const { confirmToken: _token, ...safe } = b;
+  return { ...safe, createdAt: safe.createdAt?.toISOString() };
+}
 function mapReview(r)   { return { ...r, createdAt: r.createdAt?.toISOString() }; }
 function mapClient(c)   { return { ...c, createdAt: c.createdAt?.toISOString() }; }
 function mapWaitlist(w) { return { ...w, createdAt: w.createdAt?.toISOString() }; }
@@ -769,6 +1056,21 @@ function inferBookingDurationMinutes(booking, durationByServiceName) {
   return isParallel ? Math.max(...durations) : durations.reduce((sum, duration) => sum + duration, 0);
 }
 
+function bookingHasConflict(existingBookings, options) {
+  const { requestedStart, requestedEnd, durationByServiceName } = options;
+  return existingBookings.some((booking) => {
+    const bookedStart = toMinutes(booking.time);
+    const bookedDuration = inferBookingDurationMinutes(booking, durationByServiceName);
+    const bookedEnd = bookedStart + bookedDuration;
+    return requestedStart < bookedEnd && bookedStart < requestedEnd;
+  });
+}
+
+async function acquireBookingSlotLock(tx, masterId, date) {
+  const lockKey = `booking:${masterId}:${date}`;
+  await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+}
+
 const MASTER_ALLOWED_FIELDS = [
   'name',
   'role',
@@ -955,10 +1257,10 @@ function normalizeMasterUserPayload(rawUser, options = {}) {
   if (forCreate || !userId) {
     if (!passwordRaw) return { error: 'Укажите пароль для аккаунта мастера' };
     if (passwordRaw.length < 4) return { error: 'Пароль аккаунта мастера должен содержать минимум 4 символа' };
-    normalized.password = passwordRaw;
+    normalized.password = hashPassword(passwordRaw);
   } else if (passwordRaw) {
     if (passwordRaw.length < 4) return { error: 'Пароль аккаунта мастера должен содержать минимум 4 символа' };
-    normalized.password = passwordRaw;
+    normalized.password = hashPassword(passwordRaw);
   }
 
   return { data: normalized };
@@ -969,6 +1271,13 @@ function normalizeOptionalString(value, maxLength) {
   const normalized = String(value).trim();
   if (!normalized) return null;
   return normalized.slice(0, maxLength);
+}
+
+function appendSystemNote(existingNotes, systemNote) {
+  const current = normalizeOptionalString(existingNotes, 4000);
+  if (!current) return systemNote;
+  if (current.includes(systemNote)) return current;
+  return `${current}\n[system] ${systemNote}`.slice(0, 4000);
 }
 
 // в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ

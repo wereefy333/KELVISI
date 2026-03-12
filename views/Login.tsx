@@ -113,11 +113,11 @@ export const Login: React.FC<LoginProps> = ({ onLogin, users, showDemoCredential
             </button>
           </form>
 
-          {showDemoCredentials && (
+          {showDemoCredentials && authUsers.some(user => user.password) && (
             <div className="mt-8 pt-6 border-t border-zinc-800">
               <p className="text-xs text-zinc-400 mb-4 font-medium">ДЕМО УЧЕТНЫЕ ДАННЫЕ:</p>
               <div className="space-y-2">
-                {authUsers.map(user => (
+                {authUsers.filter(user => user.password).map(user => (
                   <div key={user.id} className="text-xs bg-zinc-800/50 p-3 rounded border border-zinc-700">
                     <div className="text-zinc-300 font-mono">
                       <div>{user.email}</div>

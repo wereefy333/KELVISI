@@ -58,6 +58,7 @@ model User {
     phone     String?
     isActive  Boolean  @default(true)
     createdAt DateTime @default(now())
+    master    Master?
 }
 
 model Service {
@@ -73,6 +74,8 @@ model Service {
 
 model Master {
     id              String            @id @default(cuid())
+    userId          String?           @unique
+    user            User?             @relation(fields: [userId], references: [id])
     name            String
     role            String // display title: "Top Barber", "Art Director" ...
     rating          Float

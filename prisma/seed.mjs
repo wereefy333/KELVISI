@@ -3,23 +3,31 @@
  * Run: npx prisma db seed
  */
 
+import { randomBytes, scryptSync } from 'crypto';
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
+const PASSWORD_HASH_PREFIX = 'scrypt';
+
+function hashPassword(password) {
+  const salt = randomBytes(16).toString('hex');
+  const derivedKey = scryptSync(password, salt, 64).toString('hex');
+  return `${PASSWORD_HASH_PREFIX}$${salt}$${derivedKey}`;
+}
 
 async function main() {
   console.log('Seeding Lumière database...');
 
   // в”Ђв”Ђ Users в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
   const usersData = [
-    { id: 'u1', email: 'aleksandr@salon.ru', password: 'pass123', name: 'Александр Громов', role: 'MASTER', phone: '+7 900 111 22 33', isActive: true },
-    { id: 'u2', email: 'elena@salon.ru', password: 'pass123', name: 'Елена Вишневская', role: 'MASTER', phone: '+7 900 222 33 44', isActive: true },
-    { id: 'u3', email: 'dmitry@salon.ru', password: 'pass123', name: 'Дмитрий Волков', role: 'MASTER', phone: '+7 900 333 44 55', isActive: true },
-    { id: 'u4', email: 'anna@salon.ru', password: 'pass123', name: 'Анна Соколова', role: 'MASTER', phone: '+7 900 444 55 66', isActive: true },
-    { id: 'u5', email: 'maria@salon.ru', password: 'pass123', name: 'Мария Козлова', role: 'MASTER', phone: '+7 900 555 66 77', isActive: true },
-    { id: 'u6', email: 'artem@salon.ru', password: 'pass123', name: 'Артем Новиков', role: 'MASTER', phone: '+7 900 666 77 88', isActive: true },
-    { id: 'u_admin', email: 'admin@salon.ru', password: 'admin123', name: '\u0410\u0434\u043c\u0438\u043d\u0438\u0441\u0442\u0440\u0430\u0442\u043e\u0440 \u0441\u0430\u043b\u043e\u043d\u0430', role: 'ADMIN', phone: '+7 900 000 00 00', isActive: true },
-    { id: 'u_client', email: 'client@email.com', password: 'client123', name: 'Клиент Тестовый', role: 'CLIENT', phone: '+7 900 999 99 99', isActive: true },
+    { id: 'u1', email: 'aleksandr@salon.ru', password: hashPassword('pass123'), name: 'Александр Громов', role: 'MASTER', phone: '+7 900 111 22 33', isActive: true },
+    { id: 'u2', email: 'elena@salon.ru', password: hashPassword('pass123'), name: 'Елена Вишневская', role: 'MASTER', phone: '+7 900 222 33 44', isActive: true },
+    { id: 'u3', email: 'dmitry@salon.ru', password: hashPassword('pass123'), name: 'Дмитрий Волков', role: 'MASTER', phone: '+7 900 333 44 55', isActive: true },
+    { id: 'u4', email: 'anna@salon.ru', password: hashPassword('pass123'), name: 'Анна Соколова', role: 'MASTER', phone: '+7 900 444 55 66', isActive: true },
+    { id: 'u5', email: 'maria@salon.ru', password: hashPassword('pass123'), name: 'Мария Козлова', role: 'MASTER', phone: '+7 900 555 66 77', isActive: true },
+    { id: 'u6', email: 'artem@salon.ru', password: hashPassword('pass123'), name: 'Артем Новиков', role: 'MASTER', phone: '+7 900 666 77 88', isActive: true },
+    { id: 'u_admin', email: 'admin@salon.ru', password: hashPassword('admin123'), name: '\u0410\u0434\u043c\u0438\u043d\u0438\u0441\u0442\u0440\u0430\u0442\u043e\u0440 \u0441\u0430\u043b\u043e\u043d\u0430', role: 'ADMIN', phone: '+7 900 000 00 00', isActive: true },
+    { id: 'u_client', email: 'client@email.com', password: hashPassword('client123'), name: 'Клиент Тестовый', role: 'CLIENT', phone: '+7 900 999 99 99', isActive: true },
   ];
 
   for (const user of usersData) {
@@ -62,12 +70,12 @@ async function main() {
   // в”Ђв”Ђ Masters в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
   const mastersData = [
     {
-      id: 'mst2', name: '\u0415\u043b\u0435\u043d\u0430 \u0412\u0438\u0448\u043d\u0435\u0432\u0441\u043a\u0430\u044f', role: 'ART DIRECTOR', rating: 5.0, specialization: ['WOMEN'], level: 'TOP', priceMultiplier: 1.5,
+      id: 'mst2', userId: 'u2', name: '\u0415\u043b\u0435\u043d\u0430 \u0412\u0438\u0448\u043d\u0435\u0432\u0441\u043a\u0430\u044f', role: 'ART DIRECTOR', rating: 5.0, specialization: ['WOMEN'], level: 'TOP', priceMultiplier: 1.5,
       imageUrl: '/masters/elena-vishnevskaya.webp',
       workSchedule: { 1: {start:'10:00',end:'20:00'}, 2: {start:'10:00',end:'20:00'}, 3: {start:'10:00',end:'20:00'}, 4: {start:'10:00',end:'20:00'}, 5: {start:'10:00',end:'20:00'}, 6: {start:'11:00',end:'18:00'}, 0: null },
     },
     {
-      id: 'mst1', name: '\u0410\u043b\u0435\u043a\u0441\u0430\u043d\u0434\u0440 \u0413\u0440\u043e\u043c\u043e\u0432', role: 'TOP BARBER', rating: 5.0, specialization: ['MEN'], level: 'TOP', priceMultiplier: 1.5,
+      id: 'mst1', userId: 'u1', name: '\u0410\u043b\u0435\u043a\u0441\u0430\u043d\u0434\u0440 \u0413\u0440\u043e\u043c\u043e\u0432', role: 'TOP BARBER', rating: 5.0, specialization: ['MEN'], level: 'TOP', priceMultiplier: 1.5,
       imageUrl: '/masters/aleksandr-gromov.jpg',
       workSchedule: { 1: {start:'10:00',end:'20:00'}, 2: {start:'10:00',end:'20:00'}, 3: {start:'10:00',end:'20:00'}, 4: {start:'10:00',end:'20:00'}, 5: {start:'10:00',end:'20:00'}, 6: {start:'11:00',end:'18:00'}, 0: null },
     },
@@ -77,7 +85,7 @@ async function main() {
       workSchedule: { 1: {start:'10:00',end:'20:00'}, 2: {start:'10:00',end:'20:00'}, 3: {start:'10:00',end:'20:00'}, 4: {start:'10:00',end:'20:00'}, 5: {start:'10:00',end:'20:00'}, 6: {start:'11:00',end:'18:00'}, 0: null },
     },
     {
-      id: 'mst3', name: '\u0414\u043c\u0438\u0442\u0440\u0438\u0439 \u0412\u043e\u043b\u043a\u043e\u0432', role: 'SENIOR BARBER', rating: 5.0, specialization: ['MEN'], level: 'SENIOR', priceMultiplier: 1.2,
+      id: 'mst3', userId: 'u3', name: '\u0414\u043c\u0438\u0442\u0440\u0438\u0439 \u0412\u043e\u043b\u043a\u043e\u0432', role: 'SENIOR BARBER', rating: 5.0, specialization: ['MEN'], level: 'SENIOR', priceMultiplier: 1.2,
       imageUrl: '/masters/dmitry-volkov.jpg',
       workSchedule: { 1: {start:'10:00',end:'20:00'}, 2: {start:'10:00',end:'20:00'}, 3: null, 4: {start:'10:00',end:'20:00'}, 5: {start:'10:00',end:'20:00'}, 6: {start:'11:00',end:'18:00'}, 0: null },
     },
@@ -87,17 +95,17 @@ async function main() {
       workSchedule: { 1: {start:'10:00',end:'20:00'}, 2: {start:'10:00',end:'20:00'}, 3: {start:'10:00',end:'20:00'}, 4: null, 5: {start:'10:00',end:'20:00'}, 6: {start:'11:00',end:'18:00'}, 0: null },
     },
     {
-      id: 'mst4', name: '\u0410\u043d\u043d\u0430 \u0421\u043e\u043a\u043e\u043b\u043e\u0432\u0430', role: 'STYLIST', rating: 5.0, specialization: ['WOMEN'], level: 'SENIOR', priceMultiplier: 1.2,
+      id: 'mst4', userId: 'u4', name: '\u0410\u043d\u043d\u0430 \u0421\u043e\u043a\u043e\u043b\u043e\u0432\u0430', role: 'STYLIST', rating: 5.0, specialization: ['WOMEN'], level: 'SENIOR', priceMultiplier: 1.2,
       imageUrl: '/masters/anna-sokolova.webp',
       workSchedule: { 1: {start:'10:00',end:'20:00'}, 2: {start:'10:00',end:'20:00'}, 3: {start:'10:00',end:'20:00'}, 4: null, 5: {start:'10:00',end:'20:00'}, 6: {start:'11:00',end:'18:00'}, 0: null },
     },
     {
-      id: 'mst5', name: '\u041c\u0430\u0440\u0438\u044f \u041a\u043e\u0437\u043b\u043e\u0432\u0430', role: 'JUNIOR STYLIST', rating: 4.9, specialization: ['WOMEN'], level: 'JUNIOR', priceMultiplier: 1.0,
+      id: 'mst5', userId: 'u5', name: '\u041c\u0430\u0440\u0438\u044f \u041a\u043e\u0437\u043b\u043e\u0432\u0430', role: 'JUNIOR STYLIST', rating: 4.9, specialization: ['WOMEN'], level: 'JUNIOR', priceMultiplier: 1.0,
       imageUrl: '/masters/maria-kozlova.jpg',
       workSchedule: { 1: {start:'10:00',end:'20:00'}, 2: {start:'10:00',end:'20:00'}, 3: {start:'10:00',end:'20:00'}, 4: {start:'10:00',end:'20:00'}, 5: {start:'10:00',end:'20:00'}, 6: null, 0: null },
     },
     {
-      id: 'mst6', name: '\u0410\u0440\u0442\u0435\u043c \u041d\u043e\u0432\u0438\u043a\u043e\u0432', role: 'JUNIOR BARBER', rating: 4.9, specialization: ['MEN'], level: 'JUNIOR', priceMultiplier: 1.0,
+      id: 'mst6', userId: 'u6', name: '\u0410\u0440\u0442\u0435\u043c \u041d\u043e\u0432\u0438\u043a\u043e\u0432', role: 'JUNIOR BARBER', rating: 4.9, specialization: ['MEN'], level: 'JUNIOR', priceMultiplier: 1.0,
       imageUrl: '/masters/artem-novikov.jpg',
       workSchedule: { 1: {start:'12:00',end:'20:00'}, 2: {start:'12:00',end:'20:00'}, 3: {start:'12:00',end:'20:00'}, 4: {start:'12:00',end:'20:00'}, 5: {start:'12:00',end:'20:00'}, 6: {start:'11:00',end:'18:00'}, 0: null },
     },

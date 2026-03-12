@@ -1,11 +1,10 @@
 ﻿import { Master, Review, Service, ServiceCategory, Client, WaitlistEntry, User } from "./types";
 
-// USERS DATABASE - В production нужна хешировка паролей!
+// USERS DATABASE
 export const USERS: User[] = [
   {
     id: 'u1',
     email: 'aleksandr@salon.ru',
-    password: 'pass123', // In production: bcrypt hash
     name: 'Александр Громов',
     role: 'MASTER',
     phone: '+7 900 111 22 33',
@@ -15,7 +14,6 @@ export const USERS: User[] = [
   {
     id: 'u2',
     email: 'elena@salon.ru',
-    password: 'pass123',
     name: 'Елена Вишневская',
     role: 'MASTER',
     phone: '+7 900 222 33 44',
@@ -25,7 +23,6 @@ export const USERS: User[] = [
   {
     id: 'u3',
     email: 'dmitry@salon.ru',
-    password: 'pass123',
     name: 'Дмитрий Волков',
     role: 'MASTER',
     phone: '+7 900 333 44 55',
@@ -35,7 +32,6 @@ export const USERS: User[] = [
   {
     id: 'u4',
     email: 'anna@salon.ru',
-    password: 'pass123',
     name: 'Анна Соколова',
     role: 'MASTER',
     phone: '+7 900 444 55 66',
@@ -45,7 +41,6 @@ export const USERS: User[] = [
   {
     id: 'u5',
     email: 'maria@salon.ru',
-    password: 'pass123',
     name: 'Мария Козлова',
     role: 'MASTER',
     phone: '+7 900 555 66 77',
@@ -55,7 +50,6 @@ export const USERS: User[] = [
   {
     id: 'u6',
     email: 'artem@salon.ru',
-    password: 'pass123',
     name: 'Артем Новиков',
     role: 'MASTER',
     phone: '+7 900 666 77 88',
@@ -65,7 +59,6 @@ export const USERS: User[] = [
   {
     id: 'u_admin',
     email: 'admin@salon.ru',
-    password: 'admin123',
     name: 'Администратор салона',
     role: 'ADMIN',
     phone: '+7 900 000 00 00',
@@ -75,7 +68,6 @@ export const USERS: User[] = [
   {
     id: 'u_client',
     email: 'client@email.com',
-    password: 'client123',
     name: 'Клиент Тестовый',
     role: 'CLIENT',
     phone: '+7 900 999 99 99',
