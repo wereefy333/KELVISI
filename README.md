@@ -910,12 +910,6 @@ MAIL_CONNECTION_TIMEOUT_MS="10000"
 MAIL_SOCKET_TIMEOUT_MS="15000"
 ```
 
-### `.env.local`
-
-```env
-GEMINI_API_KEY=PLACEHOLDER_API_KEY
-```
-
 ### Переменные и назначение
 
 - `DATABASE_URL` - подключение Prisma к PostgreSQL.
@@ -923,7 +917,6 @@ GEMINI_API_KEY=PLACEHOLDER_API_KEY
 - `CORS_ORIGINS` - whitelist origins для CORS.
 - `AUTH_SECRET` - секрет подписи токенов API для `ADMIN`/`MASTER`.
 - `MAIL_*` - SMTP-конфигурация отправки писем.
-- `GEMINI_API_KEY` - ключ для потенциальных AI-функций (в текущем основном пользовательском потоке напрямую не задействован).
 
 ### `.env.example`
 
