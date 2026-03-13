@@ -1,4 +1,4 @@
-# Деплой Lumière на виртуальную машину (Cloud.ru)
+# Деплой Kelvisi на виртуальную машину (Cloud.ru)
 
 ## Обзор архитектуры
 
@@ -84,18 +84,18 @@ docker compose version
 
 ```bash
 # На сервере:
-git clone https://github.com/<ваш-юзернейм>/lumiere.git
-cd lumiere
+git clone https://github.com/<ваш-юзернейм>/kelvisi.git
+cd kelvisi
 ```
 
 ### Вариант B — через SCP (если нет GitHub)
 
 ```bash
 # На СВОЁМ компьютере (в PowerShell):
-scp -r C:\vs\lumiere ubuntu@<IP_СЕРВЕРА>:~/lumiere
+scp -r C:\vs\KELVISI ubuntu@<IP_СЕРВЕРА>:~/kelvisi
 
 # На сервере:
-cd ~/lumiere
+cd ~/kelvisi
 ```
 
 ---
@@ -121,7 +121,7 @@ MAIL_PORT=465
 MAIL_SECURE=true
 MAIL_USER=your-mail@example.com
 MAIL_PASS=your-app-password
-MAIL_FROM=Lumiere <your-mail@example.com>
+MAIL_FROM=Kelvisi <your-mail@example.com>
 ```
 
 Сгенерировать `AUTH_SECRET`:
@@ -246,7 +246,7 @@ server {
 | `docker compose logs -f app`             | Логи API в реальном времени |
 | `docker compose logs -f nginx`           | Логи nginx                  |
 | `docker compose exec app sh`             | Залезть в контейнер         |
-| `docker compose exec db psql -U lumiere` | Войти в PostgreSQL          |
+| `docker compose exec db psql -U kelvisi` | Войти в PostgreSQL          |
 | `docker compose restart app`             | Перезапустить только API    |
 
 ---
@@ -254,7 +254,7 @@ server {
 ## Обновление проекта
 
 ```bash
-cd ~/lumiere
+cd ~/kelvisi
 git pull                       # подтянуть новый код
 docker compose up -d --build   # пересобрать и перезапустить
 ```

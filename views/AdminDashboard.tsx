@@ -1428,7 +1428,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       <div className="bg-zinc-900 border-b border-zinc-800 sticky top-0 z-40">
         <div className="container mx-auto px-4">
           <div className="flex justify-between items-center h-16">
-            <h1 className="text-xl font-serif text-white">LUMIÈRE <span className="text-zinc-500 font-sans text-sm ml-2">/ Администратор</span></h1>
+            <h1 className="text-xl font-serif text-white">KELVISI <span className="text-zinc-500 font-sans text-sm ml-2">/ Администратор</span></h1>
             <div className="flex items-center gap-4">
               <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
               <span className="text-zinc-400 text-sm hidden sm:inline">Система активна</span>

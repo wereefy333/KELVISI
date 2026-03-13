@@ -1,5 +1,5 @@
 const fs = require('fs');
-const filePath = 'C:\\vs\\lumiere\\views\\ClientBooking.tsx';
+const filePath = 'C:\\vs\\KELVISI\\views\\ClientBooking.tsx';
 const content = fs.readFileSync(filePath, 'utf8');
 const lines = content.split('\n');
 

@@ -899,10 +899,10 @@ app.post('/api/bookings', async (req, res) => {
   const confirmUrl = `${APP_PUBLIC_URL}/confirm?token=${token}`;
   const htmlBody = `
     <div style="font-family: Georgia, serif; background: #0a0a0a; color: #e4e4e7; padding: 48px 32px; max-width: 580px; margin: 0 auto; border: 1px solid #27272a;">
-      <h1 style="color: #f59e0b; font-size: 32px; letter-spacing: 6px; text-transform: uppercase; margin: 0 0 4px;">Lumière</h1>
+      <h1 style="color: #f59e0b; font-size: 32px; letter-spacing: 6px; text-transform: uppercase; margin: 0 0 4px;">Kelvisi</h1>
       <p style="color: #71717a; font-size: 12px; letter-spacing: 4px; text-transform: uppercase; margin: 0 0 40px;">Luxury Hair Salon</p>
       <p style="font-size: 16px;">Здравствуйте, <strong style="color: #fff;">${normalizedClientName}</strong>!</p>
-      <p style="color: #a1a1aa; line-height: 1.6;">Вы записались в салон <strong style="color: #fff;">Lumière</strong>. Для активации брони нажмите кнопку ниже.</p>
+      <p style="color: #a1a1aa; line-height: 1.6;">Вы записались в салон <strong style="color: #fff;">Kelvisi</strong>. Для активации брони нажмите кнопку ниже.</p>
       <div style="background: #18181b; border-left: 3px solid #f59e0b; padding: 20px 24px; margin: 32px 0; border-radius: 2px;">
         <p style="margin: 0 0 10px; font-size: 14px;"><span style="color: #71717a;">Услуга:&nbsp;</span><strong>${serviceId}</strong></p>
         <p style="margin: 0 0 10px; font-size: 14px;"><span style="color: #71717a;">Дата:&nbsp;&nbsp;&nbsp;&nbsp;</span><strong>${date}</strong></p>
@@ -927,7 +927,7 @@ app.post('/api/bookings', async (req, res) => {
     await transporter.sendMail({
       from: MAIL_FROM,
       to: normalizedClientEmail,
-      subject: '✂ Подтвердите запись в Lumière',
+      subject: '✂ Подтвердите запись в Kelvisi',
       html: htmlBody,
     });
     console.log(`✓ Email sent -> ${normalizedClientEmail} | token: ${token}`);
@@ -1529,7 +1529,7 @@ setInterval(async () => {
 
 app.listen(PORT, HOST, async () => {
   await prisma.$connect();
-  console.log(`\nLumiere API -> http://${HOST}:${PORT} (PostgreSQL via Prisma)`);
+  console.log(`\nKelvisi API -> http://${HOST}:${PORT} (PostgreSQL via Prisma)`);
   console.log(`Public app URL -> ${APP_PUBLIC_URL}`);
   console.log(`CORS origins -> ${CORS_ORIGINS.join(', ')}`);
   console.log(`   GET/POST/PUT/DELETE /api/services`);

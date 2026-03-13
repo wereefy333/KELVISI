@@ -1,5 +1,5 @@
 ﻿/**
- * Prisma seed script - populate the DB with the initial Lumière data.
+ * Prisma seed script - populate the DB with the initial Kelvisi data.
  * Run: npx prisma db seed
  */
 
@@ -16,7 +16,7 @@ function hashPassword(password) {
 }
 
 async function main() {
-  console.log('Seeding Lumière database...');
+  console.log('Seeding Kelvisi database...');
 
   // в”Ђв”Ђ Users в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
   const usersData = [

@@ -4,13 +4,13 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: lumiere
+      POSTGRES_USER: kelvisi
       POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
-      POSTGRES_DB: lumiere
+      POSTGRES_DB: kelvisi
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U lumiere"]
+      test: ["CMD-SHELL", "pg_isready -U kelvisi"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -23,7 +23,7 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://lumiere:${DB_PASSWORD:-changeme}@db:5432/lumiere
+      DATABASE_URL: postgresql://kelvisi:${DB_PASSWORD:-changeme}@db:5432/kelvisi
       AUTH_SECRET: ${AUTH_SECRET:-change-me-to-random-32-chars}
       APP_PUBLIC_URL: ${APP_PUBLIC_URL:-http://localhost}
       CORS_ORIGINS: ${APP_PUBLIC_URL:-http://localhost}
@@ -54,7 +54,7 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://lumiere:${DB_PASSWORD:-changeme}@db:5432/lumiere
+      DATABASE_URL: postgresql://kelvisi:${DB_PASSWORD:-changeme}@db:5432/kelvisi
     entrypoint: ["sh", "-c", "npx prisma migrate deploy && cp -r /app/dist/* /frontend/"]
     volumes:
       - frontend:/frontend

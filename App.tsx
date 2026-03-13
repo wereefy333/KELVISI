@@ -14,8 +14,8 @@ type AuthSession = {
 };
 
 const STORAGE_KEYS = {
-  barber: 'lumiere.barberSession',
-  admin: 'lumiere.adminSession',
+  barber: 'kelvisi.barberSession',
+  admin: 'kelvisi.adminSession',
 } as const;
 
 function readStoredSession(key: string): AuthSession | null {
@@ -272,7 +272,7 @@ const App: React.FC = () => {
       <div className="bg-black min-h-screen flex items-center justify-center">
         <div className="text-center">
           <div className="w-16 h-16 border-2 border-gold-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-zinc-500 tracking-widest uppercase text-sm">Lumiere</p>
+          <p className="text-zinc-500 tracking-widest uppercase text-sm">Kelvisi</p>
         </div>
       </div>
     );

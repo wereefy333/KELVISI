@@ -629,7 +629,7 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({ onBook, services, 
   const PhilosophySection = () => (
     <div id="philosophy-section" className="py-24 bg-zinc-900/30">
       <div className="container mx-auto px-4 max-w-4xl text-center">
-        <h3 className="text-3xl font-serif text-white mb-8">Философия LUMIÈRE</h3>
+        <h3 className="text-3xl font-serif text-white mb-8">Философия KELVISI</h3>
         <p className="text-zinc-400 text-lg leading-loose font-light">
           Мы не просто стрижем волосы или делаем маникюр. Мы создаем настроение и уверенность. 
           В нашем пространстве время замедляется, уступая место эстетике, комфорту и заботе о себе. 
@@ -777,7 +777,7 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({ onBook, services, 
   const AdvantagesSection = () => (
     <div className="py-24 bg-zinc-900/20">
       <div className="container mx-auto px-4">
-        <SectionTitle title="Стандарты LUMIÈRE" subtitle="Привилегии LUMIÈRE" centered />
+        <SectionTitle title="Стандарты KELVISI" subtitle="Привилегии KELVISI" centered />
         
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl mx-auto">
           <div className="adv-card text-center p-8 border border-zinc-800/90 bg-gradient-to-b from-zinc-900/80 to-zinc-950/80 hover:border-gold-500/40 hover:shadow-[0_16px_40px_rgba(245,158,11,0.08)] transition-all">
@@ -852,7 +852,7 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({ onBook, services, 
                 </div>
                 <div>
                   <h5 className="text-white font-medium mb-1">Email</h5>
-                  <p className="text-zinc-400">lumierebot21@gmail.com</p>
+                  <p className="text-zinc-400">hello@kelvisi.com</p>
                 </div>
               </div>
               
@@ -892,7 +892,7 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({ onBook, services, 
              Est. 2026 • Rostov-on-Don
              <span className="w-8 h-[1px] bg-gold-500 inline-block"></span>
           </p>
-          <h1 className="text-6xl md:text-8xl lg:text-9xl font-serif text-white mb-8 tracking-tighter">LUMIÈRE</h1>
+          <h1 className="text-6xl md:text-8xl lg:text-9xl font-serif text-white mb-8 tracking-tighter">KELVISI</h1>
           <p className="text-zinc-200 text-lg md:text-xl font-light max-w-2xl mx-auto mb-12 leading-relaxed tracking-wide">
             Пространство высокой эстетики. <br/> Ваш стиль — наше искусство.
           </p>
@@ -938,7 +938,7 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({ onBook, services, 
         <div className="container mx-auto px-4">
           <div className="grid md:grid-cols-4 gap-8 mb-8">
             <div>
-              <h4 className="text-white font-serif text-xl mb-4">LUMIÈRE</h4>
+              <h4 className="text-white font-serif text-xl mb-4">KELVISI</h4>
               <p className="text-zinc-500 text-sm leading-relaxed">Премиальный салон красоты в самом сердце Ростова-на-Дону</p>
             </div>
             <div>
@@ -967,7 +967,7 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({ onBook, services, 
           </div>
           
           <div className="border-t border-zinc-800 pt-8 flex flex-col md:flex-row justify-between items-center gap-4">
-            <p className="text-zinc-600 text-sm">© 2026 LUMIÈRE. Все права защищены.</p>
+            <p className="text-zinc-600 text-sm">© 2026 KELVISI. Все права защищены.</p>
             <div className="flex gap-6 text-zinc-600 text-sm">
               <a href="#" className="hover:text-gold-500 transition-colors">Политика конфиденциальности</a>
               <a href="#" className="hover:text-gold-500 transition-colors">Оферта</a>
@@ -1096,7 +1096,7 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({ onBook, services, 
         {showTimingModePrompt && (
           <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
             <div className="w-full max-w-2xl border border-gold-500/30 bg-zinc-950 p-6 md:p-8">
-              <h3 className="text-2xl md:text-3xl font-serif text-white mb-4">LUMIÈRE ценит ваше время</h3>
+              <h3 className="text-2xl md:text-3xl font-serif text-white mb-4">KELVISI ценит ваше время</h3>
               <p className="text-zinc-300 leading-relaxed mb-6">
                 Хотите, чтобы мастера выполнили услуги одновременно (в 4 руки)? Это сэкономит вам до{' '}
                 <span className="text-gold-500 font-semibold">{parallelTimeSaved} мин</span>.

@@ -1,4 +1,4 @@
-# LUMIERE - Luxury Salon Management System
+# KELVISI - Luxury Salon Management System
 
 Полнофункциональная веб-система управления премиальным салоном красоты:
 - публичный сайт с онлайн-записью;
@@ -180,7 +180,7 @@ PostgreSQL
 ## Структура каталогов и назначение файлов
 
 ```text
-lumiere/
+kelvisi/
   App.tsx
   index.tsx
   index.html
@@ -312,7 +312,7 @@ lumiere/
 Содержимое:
 
 1. Hero-блок:
-   - бренд `LUMIÈRE`;
+   - бренд `KELVISI`;
    - CTA-кнопка `Записаться Онлайн`.
 2. Философия салона.
 3. KPI-витрина (год основания, число клиентов, число мастеров, рейтинг).
@@ -894,7 +894,7 @@ lumiere/
 ### `.env` (пример)
 
 ```env
-DATABASE_URL="postgresql://postgres:password@localhost:5432/lumiere"
+DATABASE_URL="postgresql://postgres:password@localhost:5432/kelvisi"
 
 APP_PUBLIC_URL="http://localhost:4000"
 CORS_ORIGINS="http://localhost:4000,http://127.0.0.1:4000"
@@ -905,7 +905,7 @@ MAIL_PORT="465"
 MAIL_SECURE="true"
 MAIL_USER="your-mailbox@example.com"
 MAIL_PASS="your-app-password"
-MAIL_FROM="Lumiere Salon <your-mailbox@example.com>"
+MAIL_FROM="Kelvisi Salon <your-mailbox@example.com>"
 MAIL_CONNECTION_TIMEOUT_MS="10000"
 MAIL_SOCKET_TIMEOUT_MS="15000"
 ```
@@ -920,7 +920,7 @@ MAIL_SOCKET_TIMEOUT_MS="15000"
 
 ### `.env.example`
 
-В репозитории есть [`.env.example`](/c:/vs/lumiere/.env.example) с безопасными плейсхолдерами.
+В репозитории есть `./.env.example` с безопасными плейсхолдерами для Kelvisi.
 Секреты SMTP и `AUTH_SECRET` должны задаваться только через локальный `.env` или production secret store.
 
 ---
