@@ -76,6 +76,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [editingMaster, setEditingMaster] = useState<Master | null>(null);
   const [showAddMaster, setShowAddMaster] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [clientSearchQuery, setClientSearchQuery] = useState('');
   const [contactClient, setContactClient] = useState<Client | null>(null);
   const [promoClient, setPromoClient] = useState<Client | null>(null);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
@@ -94,6 +95,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const completedBookings = paidTodayBookings.length;
   const pendingReviews = reviews.filter(r => r.status === 'PENDING').length;
   const activeWaitlist = waitlist.filter(entry => entry.preferredDates.some(isDateOnOrAfterToday));
+  const filteredClients = clients.filter(client => {
+    const query = clientSearchQuery.trim().toLowerCase();
+    if (!query) return true;
+    return (
+      client.name.toLowerCase().includes(query) ||
+      client.phone.toLowerCase().includes(query) ||
+      (client.email || '').toLowerCase().includes(query)
+    );
+  });
   
   // Inactive clients (not visited in 60 days)
   const inactiveClients = clients.filter(c => {
@@ -1507,9 +1517,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Clients Tab
   const ClientsContent = () => (
     <Card className="p-0 overflow-hidden">
-      <div className="p-6 border-b border-zinc-800 flex justify-between items-center">
-        <h3 className="text-white font-serif">База клиентов</h3>
-        <div className="text-zinc-500 text-sm">{clients.length} клиентов</div>
+      <div className="p-6 border-b border-zinc-800 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h3 className="text-white font-serif">База клиентов</h3>
+          <div className="text-zinc-500 text-sm">{filteredClients.length} из {clients.length} клиентов</div>
+        </div>
+        <div className="relative w-full md:w-80">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+          <input
+            type="text"
+            placeholder="Поиск по имени, телефону, email..."
+            value={clientSearchQuery}
+            onChange={e => setClientSearchQuery(e.target.value)}
+            className="pl-10 pr-4 py-2 bg-zinc-800 border border-zinc-700 text-white text-sm w-full focus:border-gold-500 outline-none"
+          />
+        </div>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm text-zinc-400">
@@ -1525,7 +1547,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-800">
-            {clients.map(client => {
+            {filteredClients.map(client => {
               const daysSinceVisit = client.lastVisit 
                 ? Math.floor((now.getTime() - new Date(client.lastVisit).getTime()) / (1000 * 60 * 60 * 24))
                 : null;

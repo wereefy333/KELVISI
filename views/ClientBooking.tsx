@@ -460,7 +460,9 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({ onBook, services, 
     });
 
     const bookingNotes = [
-      `Режим: ${timingMode === 'PARALLEL' ? 'В 4 руки (параллельно)' : 'По очереди (последовательно)'}`,
+      ...(selectedServices.length > 1
+        ? [`Режим: ${timingMode === 'PARALLEL' ? 'В 4 руки (параллельно)' : 'По очереди (последовательно)'}`]
+        : []),
       ...(computedPlanLines.length > 0 ? computedPlanLines : fallbackLines),
     ].join('\n');
 
