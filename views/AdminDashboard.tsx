@@ -43,6 +43,7 @@ interface AdminDashboardProps {
   onUpdateBooking: (id: string, updates: Partial<Booking>) => void;
   onPrepareClientContact: (clientId: string, payload: { subject: string; message: string }) => Promise<{ draft?: { to?: string; subject?: string; message?: string } }>;
   onIssueClientPromo: (clientId: string, payload: { code: string; discount: string; message?: string }) => Promise<{ promo?: { code?: string; discount?: string; message?: string } }>;
+  onGetClientBookings: (clientId: string) => Promise<Booking[]>;
   onLogout: () => void;
 }
 
@@ -66,6 +67,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onUpdateBooking,
   onPrepareClientContact,
   onIssueClientPromo,
+  onGetClientBookings,
   onLogout
 }) => {
   const [activeTab, setActiveTab] = useState<AdminTab>('dashboard');
@@ -76,6 +78,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [contactClient, setContactClient] = useState<Client | null>(null);
   const [promoClient, setPromoClient] = useState<Client | null>(null);
+  const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+  const [selectedClientBookings, setSelectedClientBookings] = useState<Booking[]>([]);
+  const [selectedClientLoading, setSelectedClientLoading] = useState(false);
+  const [selectedClientError, setSelectedClientError] = useState('');
   
   // Calculate Stats (from DB data loaded into bookings)
   const now = new Date();
@@ -212,6 +218,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     if (!navigator?.clipboard?.writeText) return false;
     await navigator.clipboard.writeText(value);
     return true;
+  };
+
+  const openClientDetails = async (client: Client) => {
+    setSelectedClient(client);
+    setSelectedClientBookings([]);
+    setSelectedClientError('');
+    try {
+      setSelectedClientLoading(true);
+      const result = await onGetClientBookings(client.id);
+      setSelectedClientBookings(Array.isArray(result) ? result : []);
+    } catch (error) {
+      setSelectedClientError((error as Error).message || 'Не удалось загрузить записи клиента');
+    } finally {
+      setSelectedClientLoading(false);
+    }
   };
 
   // Service Edit Modal
@@ -1422,6 +1443,67 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     );
   };
 
+  const ClientHistoryModal = ({ client, onClose }: { client: Client; onClose: () => void }) => (
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+      <div className="bg-zinc-900 border border-zinc-800 w-full max-w-4xl max-h-[90vh] overflow-hidden">
+        <div className="p-6 border-b border-zinc-800 flex justify-between items-start gap-4">
+          <div>
+            <h3 className="text-white font-serif text-xl">История клиента</h3>
+            <p className="text-zinc-500 text-sm mt-1">{client.name} • {client.phone}{client.email ? ` • ${client.email}` : ''}</p>
+          </div>
+          <button onClick={onClose} className="text-zinc-500 hover:text-white"><X size={20} /></button>
+        </div>
+
+        <div className="p-6 overflow-y-auto max-h-[calc(90vh-96px)]">
+          {selectedClientLoading ? (
+            <p className="text-zinc-500">Загрузка записей...</p>
+          ) : selectedClientError ? (
+            <p className="text-red-400 text-sm">{selectedClientError}</p>
+          ) : selectedClientBookings.length === 0 ? (
+            <p className="text-zinc-500">По этому клиенту записей не найдено.</p>
+          ) : (
+            <div className="space-y-3">
+              {selectedClientBookings.map((booking) => {
+                const master = masters.find(m => m.id === booking.masterId);
+                return (
+                  <div key={booking.id} className="border border-zinc-800 bg-zinc-950/50 p-4">
+                    <div className="flex flex-wrap justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-white font-medium">{booking.date}</span>
+                          <span className="text-zinc-500 font-mono">{booking.time}</span>
+                          <span className={`text-xs px-2 py-0.5 border ${
+                            booking.status === 'COMPLETED' ? 'border-green-900 text-green-500 bg-green-900/10' :
+                            booking.status === 'CANCELLED' ? 'border-red-900 text-red-500 bg-red-900/10' :
+                            booking.status === 'NO_SHOW' ? 'border-red-900 text-red-400 bg-red-900/10' :
+                            booking.status === 'IN_PROGRESS' ? 'border-blue-900 text-blue-400 bg-blue-900/10' :
+                            booking.status === 'CONFIRMED' ? 'border-gold-900 text-gold-500 bg-gold-900/10' :
+                            'border-zinc-700 text-zinc-400 bg-zinc-800/20'
+                          }`}>
+                            {booking.status}
+                          </span>
+                        </div>
+                        <p className="text-zinc-300 mt-2">{booking.serviceId}</p>
+                        <p className="text-zinc-500 text-sm mt-1">Мастер: <span className="text-zinc-300">{master?.name || '-'}</span></p>
+                        {booking.notes && (
+                          <p className="text-zinc-600 text-xs mt-2 whitespace-pre-wrap">{booking.notes}</p>
+                        )}
+                      </div>
+                      <div className="text-right">
+                        <div className="text-gold-500 font-mono">{booking.totalPrice.toLocaleString()} ₽</div>
+                        <div className="text-zinc-600 text-xs mt-1">ID: {booking.id.slice(0, 8)}</div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
   // Clients Tab
   const ClientsContent = () => (
     <Card className="p-0 overflow-hidden">
@@ -1469,6 +1551,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <td className="p-4 text-zinc-500 text-xs max-w-[150px] truncate">{client.notes || '-'}</td>
                   <td className="p-4">
                     <div className="flex gap-1">
+                      <button
+                        className="p-1 text-zinc-500 hover:text-gold-500"
+                        title="История записей"
+                        onClick={() => openClientDetails(client)}
+                      >
+                        <Eye size={14} />
+                      </button>
                       <button
                         className="p-1 text-zinc-500 hover:text-white"
                         title="Написать"
@@ -1682,6 +1771,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <PromoClientModal
           client={promoClient}
           onClose={() => setPromoClient(null)}
+        />
+      )}
+
+      {selectedClient && (
+        <ClientHistoryModal
+          client={selectedClient}
+          onClose={() => {
+            setSelectedClient(null);
+            setSelectedClientBookings([]);
+            setSelectedClientError('');
+          }}
         />
       )}
     </div>

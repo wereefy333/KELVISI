@@ -256,6 +256,10 @@ const App: React.FC = () => {
     return api.post(`/api/clients/${clientId}/promo`, payload, adminApiToken);
   };
 
+  const getClientBookings = async (clientId: string) => {
+    return api.get(`/api/clients/${clientId}/bookings`, adminApiToken);
+  };
+
   const handleBarberLogin = async (email: string, password: string) => {
     try {
       const data = await api.post('/api/auth/login', { email, password, role: 'MASTER' });
@@ -346,6 +350,7 @@ const App: React.FC = () => {
                 onUpdateBooking={updateBooking}
                 onPrepareClientContact={prepareClientContact}
                 onIssueClientPromo={issueClientPromo}
+                onGetClientBookings={getClientBookings}
                 onLogout={() => persistAdminSession(null)}
                 currentUser={adminUser}
               />

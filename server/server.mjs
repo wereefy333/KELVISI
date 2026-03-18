@@ -661,6 +661,7 @@ app.put('/api/bookings/:id', authenticate, requireMasterAccess, async (req, res)
       return res.status(400).json({ success: false, error: 'Нет доступных полей для обновления' });
     }
     const booking = await prisma.booking.update({ where: { id: req.params.id }, data });
+    await syncClientsFromBookings();
     await writeAuditLog({
       actor: getAuditActor(req),
       action: 'booking.update',
@@ -978,6 +979,7 @@ app.post('/api/bookings', async (req, res) => {
       html: htmlBody,
     });
     console.log(`✓ Email sent -> ${normalizedClientEmail} | token: ${token}`);
+    await syncClientsFromBookings();
     res.json({ success: true, bookingId: booking.id });
   } catch (err) {
     console.error('✖ Email error:', err.message);
@@ -990,6 +992,7 @@ app.post('/api/bookings', async (req, res) => {
           notes: appendSystemNote(booking.notes, 'SMTP_ERROR: confirmation email was not sent; booking auto-cancelled.'),
         },
       });
+      await syncClientsFromBookings();
     } catch (cleanupError) {
       console.error('✖ Booking cleanup after email failure error:', cleanupError.message);
     }
@@ -1013,6 +1016,7 @@ app.get('/api/confirm-booking', async (req, res) => {
 
   const alreadyConfirmed = booking.status === 'CONFIRMED';
   const updated = await prisma.booking.update({ where: { id: booking.id }, data: { status: 'CONFIRMED' } });
+  await syncClientsFromBookings();
 
   console.log(`✓ Booking confirmed: ${updated.id} (${updated.clientName})`);
   res.json({ success: true, booking: mapBookingForConfirmation(updated), alreadyConfirmed });
@@ -1065,8 +1069,23 @@ app.put('/api/reviews/:id', authenticate, requireRole('ADMIN'), async (req, res)
 // в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ
 
 app.get('/api/clients', authenticate, requireRole('ADMIN'), async (_req, res) => {
+  await syncClientsFromBookings();
   const clients = await prisma.client.findMany({ orderBy: { name: 'asc' } });
   res.json(clients.map(mapClient));
+});
+
+app.get('/api/clients/:id/bookings', authenticate, requireRole('ADMIN'), async (req, res) => {
+  const client = await prisma.client.findUnique({ where: { id: req.params.id } });
+  if (!client) {
+    return res.status(404).json({ success: false, error: 'Клиент не найден' });
+  }
+
+  const bookings = await prisma.booking.findMany({ orderBy: { createdAt: 'desc' } });
+  const clientBookings = bookings
+    .filter((booking) => bookingMatchesClient(client, booking))
+    .sort(compareBookingDatesDesc);
+
+  return res.json(clientBookings.map(mapBooking));
 });
 
 app.post('/api/clients/:id/contact', authenticate, requireRole('ADMIN'), async (req, res) => {
@@ -1691,6 +1710,95 @@ function appendSystemNote(existingNotes, systemNote) {
   return `${current}\n[system] ${systemNote}`.slice(0, 4000);
 }
 
+function getClientIdentity(bookingOrClient) {
+  const name = normalizeClientName(bookingOrClient?.clientName ?? bookingOrClient?.name ?? '');
+  const phone = normalizeClientPhone(bookingOrClient?.clientPhone ?? bookingOrClient?.phone ?? '');
+  const email = normalizeClientEmail(bookingOrClient?.clientEmail ?? bookingOrClient?.email ?? '');
+
+  if (!name || !phone) return null;
+
+  return {
+    name,
+    phone,
+    email,
+    key: `${name.toLowerCase()}|${phone}|${email ?? ''}`,
+  };
+}
+
+function compareBookingDatesDesc(a, b) {
+  const left = `${a.date || ''}T${a.time || '00:00'}`;
+  const right = `${b.date || ''}T${b.time || '00:00'}`;
+  return right.localeCompare(left);
+}
+
+function compareDateStringsDesc(a, b) {
+  return String(b || '').localeCompare(String(a || ''));
+}
+
+function bookingMatchesClient(client, booking) {
+  const clientIdentity = getClientIdentity(client);
+  const bookingIdentity = getClientIdentity(booking);
+  if (!clientIdentity || !bookingIdentity) return false;
+  return clientIdentity.key === bookingIdentity.key;
+}
+
+function buildClientStatsFromBookings(bookings, existingClient) {
+  const sortedBookings = [...bookings].sort(compareBookingDatesDesc);
+  const completedBookings = sortedBookings.filter((booking) => booking.status === 'COMPLETED');
+  const lastVisitBooking = sortedBookings.find((booking) => booking.status !== 'PENDING_EMAIL');
+  const identity = getClientIdentity(sortedBookings[0]);
+
+  return {
+    name: identity?.name ?? existingClient?.name ?? 'Клиент',
+    phone: identity?.phone ?? existingClient?.phone ?? '',
+    email: identity?.email ?? existingClient?.email ?? null,
+    notes: existingClient?.notes ?? null,
+    totalVisits: sortedBookings.length,
+    totalSpent: completedBookings.reduce((sum, booking) => sum + Number(booking.totalPrice || 0), 0),
+    lastVisit: lastVisitBooking?.date ?? existingClient?.lastVisit ?? null,
+  };
+}
+
+async function syncClientsFromBookings(prismaClient = prisma) {
+  const [clients, bookings] = await Promise.all([
+    prismaClient.client.findMany({ orderBy: { createdAt: 'asc' } }),
+    prismaClient.booking.findMany({ orderBy: { createdAt: 'desc' } }),
+  ]);
+
+  const existingClientByKey = new Map();
+  for (const client of clients) {
+    const identity = getClientIdentity(client);
+    if (identity) {
+      existingClientByKey.set(identity.key, client);
+    }
+  }
+
+  const groupedBookings = new Map();
+  for (const booking of bookings) {
+    const identity = getClientIdentity(booking);
+    if (!identity) continue;
+    const bucket = groupedBookings.get(identity.key) ?? [];
+    bucket.push(booking);
+    groupedBookings.set(identity.key, bucket);
+  }
+
+  for (const [key, clientBookings] of groupedBookings.entries()) {
+    const existingClient = existingClientByKey.get(key) ?? null;
+    const nextData = buildClientStatsFromBookings(clientBookings, existingClient);
+
+    if (existingClient) {
+      await prismaClient.client.update({
+        where: { id: existingClient.id },
+        data: nextData,
+      });
+      continue;
+    }
+
+    const createdClient = await prismaClient.client.create({ data: nextData });
+    existingClientByKey.set(key, createdClient);
+  }
+}
+
 // в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ
 // Start
 // в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ
@@ -1708,6 +1816,7 @@ setInterval(async () => {
       data: { status: 'CANCELLED' },
     });
     if (expired.count > 0) {
+      await syncClientsFromBookings();
       console.log(`♻ Auto-cancelled ${expired.count} unconfirmed PENDING_EMAIL booking(s)`);
     }
   } catch (err) {
