@@ -29,6 +29,12 @@ services:
       CORS_ORIGINS: ${APP_PUBLIC_URL:-http://localhost}
       PORT: "3001"
       HOST: "0.0.0.0"
+      MAIL_HOST: ${MAIL_HOST}
+      MAIL_PORT: ${MAIL_PORT:-465}
+      MAIL_SECURE: ${MAIL_SECURE:-true}
+      MAIL_USER: ${MAIL_USER}
+      MAIL_PASS: ${MAIL_PASS}
+      MAIL_FROM: ${MAIL_FROM}
 
   # ── Nginx (фронтенд + reverse-proxy) ───────────────────
   nginx:

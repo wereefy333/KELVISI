@@ -28,6 +28,7 @@ if (!CORS_ORIGINS.includes(APP_PUBLIC_URL)) {
   CORS_ORIGINS.push(APP_PUBLIC_URL);
 }
 
+app.set('trust proxy', 1);
 app.use(cors({ origin: CORS_ORIGINS }));
 app.use(express.json());
 
