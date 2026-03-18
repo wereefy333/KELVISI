@@ -10,7 +10,6 @@ import {
   Save,
   Search,
   Star,
-  TrendingUp,
   User,
   X as Close,
   XCircle,
@@ -127,6 +126,39 @@ function formatWorkSchedule(workSchedule?: Master['workSchedule']): string {
   });
 
   return parts.join(' | ');
+}
+
+function getWorkScheduleEntries(workSchedule?: Master['workSchedule']): Array<{ label: string; value: string }> {
+  if (!workSchedule || typeof workSchedule !== 'object') {
+    return [
+      { label: 'Пн', value: 'Выходной' },
+      { label: 'Вт', value: 'Выходной' },
+      { label: 'Ср', value: 'Выходной' },
+      { label: 'Чт', value: 'Выходной' },
+      { label: 'Пт', value: 'Выходной' },
+      { label: 'Сб', value: 'Выходной' },
+      { label: 'Вс', value: 'Выходной' },
+    ];
+  }
+
+  const labels: Array<{ key: number; label: string }> = [
+    { key: 1, label: 'Пн' },
+    { key: 2, label: 'Вт' },
+    { key: 3, label: 'Ср' },
+    { key: 4, label: 'Чт' },
+    { key: 5, label: 'Пт' },
+    { key: 6, label: 'Сб' },
+    { key: 0, label: 'Вс' },
+  ];
+
+  return labels.map(({ key, label }) => {
+    const slot = (workSchedule as Record<string, { start: string; end: string } | null>)[String(key)]
+      ?? (workSchedule as Record<number, { start: string; end: string } | null>)[key];
+    if (!slot || !slot.start || !slot.end) {
+      return { label, value: 'Выходной' };
+    }
+    return { label, value: `${slot.start} - ${slot.end}` };
+  });
 }
 
 function normalizeProfileField(value: string | null | undefined, fallback: string): string {
@@ -322,6 +354,7 @@ export const StylistCabinet: React.FC<StylistCabinetProps> = ({
   const displayBio = normalizeProfileField(master.bio, 'Профиль пока не заполнен.');
   const displayExperience = normalizeProfileField(master.experience, 'Не указан');
   const displayLanguages = normalizeProfileField(master.languages, 'Не указаны');
+  const workScheduleEntries = getWorkScheduleEntries(master.workSchedule);
 
   const changeSelectedDate = (deltaDays: number) => {
     const date = parseLocalDateTime(selectedDate);
@@ -361,22 +394,23 @@ export const StylistCabinet: React.FC<StylistCabinetProps> = ({
 
   return (
     <div className="min-h-screen bg-black text-zinc-200 selection:bg-zinc-700 selection:text-white">
-      <div className="bg-gradient-to-r from-gold-500 to-gold-600 text-black p-6">
+      <div className="h-[2px] bg-gradient-to-r from-transparent via-gold-500/80 to-transparent" />
+      <div className="border-b border-zinc-900 bg-black/96 backdrop-blur-xl p-6">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <img
               src={master.imageUrl}
               alt={master.name}
-              className="w-16 h-16 rounded-full object-cover border-4 border-black"
+              className="w-16 h-16 rounded-full object-cover border border-gold-500/25"
             />
             <div>
-              <h1 className="text-3xl font-bold">{master.name}</h1>
-              <p className="text-gold-900">{master.role}</p>
+              <h1 className="text-3xl font-serif text-white">{master.name}</h1>
+              <p className="text-gold-500 text-sm uppercase tracking-[0.24em] mt-1">{master.role}</p>
             </div>
           </div>
           <button
             onClick={onLogout}
-            className="flex items-center gap-2 bg-black text-white px-4 py-2 rounded-lg hover:bg-zinc-900 transition-colors"
+            className="flex items-center gap-2 border border-zinc-800 text-zinc-300 px-4 py-2 rounded-full hover:border-zinc-700 hover:text-white transition-colors"
           >
             <LogOut className="w-5 h-5" />
             Выход
@@ -386,29 +420,29 @@ export const StylistCabinet: React.FC<StylistCabinetProps> = ({
 
       <div className="max-w-7xl mx-auto p-6 space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-5">
-            <p className="text-zinc-400 text-sm">Рейтинг</p>
-            <p className="text-3xl font-bold mt-1">{avgRating}</p>
+          <div className="bg-zinc-950 border border-zinc-800/90 rounded-2xl p-5">
+            <p className="text-zinc-500 text-xs uppercase tracking-[0.22em]">Рейтинг</p>
+            <p className="text-2xl font-serif text-white mt-2">{avgRating}</p>
             <p className="text-xs text-zinc-500 mt-1">{masterReviews.length} отзывов</p>
           </div>
-          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-5">
-            <p className="text-zinc-400 text-sm">Средний чек</p>
-            <p className="text-3xl font-bold mt-1">{formatCurrency(kpi.avgCheck)}</p>
+          <div className="bg-zinc-950 border border-zinc-800/90 rounded-2xl p-5">
+            <p className="text-zinc-500 text-xs uppercase tracking-[0.22em]">Средний чек</p>
+            <p className="text-2xl font-serif text-white mt-2">{formatCurrency(kpi.avgCheck)}</p>
             <p className="text-xs text-zinc-500 mt-1">По завершенным записям</p>
           </div>
-          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-5">
-            <p className="text-zinc-400 text-sm">Конверсия</p>
-            <p className="text-3xl font-bold mt-1 text-green-400">{kpi.conversion.toFixed(1)}%</p>
+          <div className="bg-zinc-950 border border-zinc-800/90 rounded-2xl p-5">
+            <p className="text-zinc-500 text-xs uppercase tracking-[0.22em]">Конверсия</p>
+            <p className="text-2xl font-serif mt-2 text-emerald-300">{kpi.conversion.toFixed(1)}%</p>
             <p className="text-xs text-zinc-500 mt-1">Подтверждена → Завершена</p>
           </div>
-          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-5">
-            <p className="text-zinc-400 text-sm">Доля неявок</p>
-            <p className="text-3xl font-bold mt-1 text-red-400">{kpi.noShowRate.toFixed(1)}%</p>
+          <div className="bg-zinc-950 border border-zinc-800/90 rounded-2xl p-5">
+            <p className="text-zinc-500 text-xs uppercase tracking-[0.22em]">Доля неявок</p>
+            <p className="text-2xl font-serif mt-2 text-rose-300">{kpi.noShowRate.toFixed(1)}%</p>
             <p className="text-xs text-zinc-500 mt-1">Неявки по подтвержденным</p>
           </div>
-          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-5">
-            <p className="text-zinc-400 text-sm">Выручка периода</p>
-            <p className="text-3xl font-bold mt-1 text-gold-400">{formatCurrency(kpi.revenue)}</p>
+          <div className="bg-zinc-950 border border-zinc-800/90 rounded-2xl p-5">
+            <p className="text-zinc-500 text-xs uppercase tracking-[0.22em]">Выручка периода</p>
+            <p className="text-2xl font-serif mt-2 text-gold-400">{formatCurrency(kpi.revenue)}</p>
             <p className="text-xs text-zinc-500 mt-1">Записей: {kpi.total}</p>
           </div>
         </div>
@@ -432,68 +466,71 @@ export const StylistCabinet: React.FC<StylistCabinetProps> = ({
           </div>
         )}
 
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
-          <div className="grid grid-cols-1 xl:grid-cols-12 gap-3">
-            <div className="xl:col-span-4 min-w-0 flex flex-wrap gap-2">
-              <button
-                onClick={() => setViewMode('day')}
-                className={`px-3 py-2 rounded border text-sm ${viewMode === 'day' ? 'bg-gold-500 text-black border-gold-500' : 'bg-zinc-800 text-zinc-300 border-zinc-700'}`}
-              >
-                День
-              </button>
-              <button
-                onClick={() => setViewMode('week')}
-                className={`px-3 py-2 rounded border text-sm ${viewMode === 'week' ? 'bg-gold-500 text-black border-gold-500' : 'bg-zinc-800 text-zinc-300 border-zinc-700'}`}
-              >
-                Неделя
-              </button>
-              <button onClick={() => changeSelectedDate(-1)} className="px-3 py-2 rounded border bg-zinc-800 text-zinc-300 border-zinc-700 text-sm">&lt;</button>
+        <div className="bg-zinc-950 border border-zinc-800/90 rounded-2xl p-5">
+          <div className="grid grid-cols-1 2xl:grid-cols-3 gap-5 items-start">
+            <div className="min-w-0 flex items-center gap-2">
+              <div className="inline-flex rounded-full border border-zinc-800 p-1">
+                <button
+                  onClick={() => setViewMode('day')}
+                  className={`px-4 py-2 rounded-full text-xs uppercase tracking-[0.22em] transition-colors ${viewMode === 'day' ? 'bg-gold-500 text-black' : 'text-zinc-400 hover:text-white'}`}
+                >
+                  День
+                </button>
+                <button
+                  onClick={() => setViewMode('week')}
+                  className={`px-4 py-2 rounded-full text-xs uppercase tracking-[0.22em] transition-colors ${viewMode === 'week' ? 'bg-gold-500 text-black' : 'text-zinc-400 hover:text-white'}`}
+                >
+                  Неделя
+                </button>
+              </div>
+            </div>
+
+            <div className="min-w-0 flex items-center justify-start xl:justify-center gap-2">
+              <button onClick={() => changeSelectedDate(-1)} className="px-3 py-2 text-sm text-zinc-400 hover:text-white transition-colors">&lt;</button>
               <input
                 type="date"
                 value={selectedDate}
                 onChange={(e) => setSelectedDate(e.target.value)}
-                className="bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200 min-w-0"
+                className="min-w-0 bg-transparent border-0 border-b border-zinc-700 px-3 py-2 text-sm text-zinc-200 focus:border-gold-500 focus:outline-none"
               />
-              <button onClick={() => changeSelectedDate(1)} className="px-3 py-2 rounded border bg-zinc-800 text-zinc-300 border-zinc-700 text-sm">&gt;</button>
+              <button onClick={() => changeSelectedDate(1)} className="px-3 py-2 text-sm text-zinc-400 hover:text-white transition-colors">&gt;</button>
             </div>
 
-            <div className="xl:col-span-2 min-w-0">
+            <div className="min-w-0 grid grid-cols-1 xl:grid-cols-[minmax(220px,1fr)_170px] gap-3">
+              <div className="relative">
+                <Search size={16} className="absolute left-0 top-2.5 text-zinc-500" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Поиск по клиенту или телефону"
+                  className="w-full bg-transparent border-0 border-b border-zinc-700 pl-7 pr-0 py-2 text-sm text-zinc-200 focus:border-gold-500 focus:outline-none"
+                />
+              </div>
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-                className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200"
+                className="w-full min-w-0 bg-transparent border-0 border-b border-zinc-700 px-0 py-2 text-sm text-zinc-200 focus:border-gold-500 focus:outline-none"
               >
                 <option value="ALL">Все статусы</option>
                 {Object.keys(STATUS_LABELS).map((status) => (
                   <option key={status} value={status}>{STATUS_LABELS[status as BookingStatus]}</option>
                 ))}
               </select>
-            </div>
-
-            <div className="xl:col-span-3 min-w-0 relative">
-              <Search size={16} className="absolute left-3 top-2.5 text-zinc-500" />
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Поиск по клиенту или телефону"
-                className="w-full bg-zinc-800 border border-zinc-700 rounded pl-9 pr-3 py-2 text-sm text-zinc-200"
-              />
-            </div>
-
-            <div className="xl:col-span-3 min-w-0 grid grid-cols-2 gap-2">
-              <input
-                type="date"
-                value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-                className="w-full min-w-0 bg-zinc-800 border border-zinc-700 rounded px-2 py-2 text-sm text-zinc-200"
-              />
-              <input
-                type="date"
-                value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-                className="w-full min-w-0 bg-zinc-800 border border-zinc-700 rounded px-2 py-2 text-sm text-zinc-200"
-              />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 min-w-0 xl:col-span-2">
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                  className="w-full min-w-0 bg-transparent border-0 border-b border-zinc-700 px-0 py-2 text-sm text-zinc-200 focus:border-gold-500 focus:outline-none"
+                />
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                  className="w-full min-w-0 bg-transparent border-0 border-b border-zinc-700 px-0 py-2 text-sm text-zinc-200 focus:border-gold-500 focus:outline-none"
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -506,9 +543,9 @@ export const StylistCabinet: React.FC<StylistCabinetProps> = ({
 
         <div className="grid grid-cols-1 2xl:grid-cols-3 gap-6">
           <div className="2xl:col-span-2 space-y-6">
-            <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-6">
+            <div className="bg-zinc-950 border border-zinc-800/90 rounded-2xl p-6">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <h2 className="text-xl font-serif text-white flex items-center gap-2">
                   <Calendar className="w-5 h-5 text-gold-500" />
                   Расписание ({viewMode === 'day' ? 'день' : 'неделя'})
                 </h2>
@@ -523,8 +560,8 @@ export const StylistCabinet: React.FC<StylistCabinetProps> = ({
                 {datesForSchedule.map((date) => {
                   const dayBookings = bookingsByDate.get(date) ?? [];
                   return (
-                    <div key={date} className="border border-zinc-800 rounded-lg overflow-hidden">
-                      <div className="px-4 py-3 bg-zinc-800/60 flex items-center justify-between">
+                    <div key={date} className="border border-zinc-800/90 rounded-2xl overflow-hidden">
+                      <div className="px-4 py-3 bg-zinc-900/80 flex items-center justify-between">
                         <div>
                           <p className="font-semibold text-white">{formatDateRu(date)}</p>
                           <p className="text-xs text-zinc-500">{date}</p>
@@ -611,9 +648,9 @@ export const StylistCabinet: React.FC<StylistCabinetProps> = ({
           </div>
 
           <div className="space-y-6">
-            <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-6">
+            <div className="bg-zinc-950 border border-zinc-800/90 rounded-2xl p-6">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <h3 className="text-lg font-serif text-white flex items-center gap-2">
                   <User size={18} className="text-gold-500" />
                   Профиль мастера
                 </h3>
@@ -666,22 +703,34 @@ export const StylistCabinet: React.FC<StylistCabinetProps> = ({
                   </button>
                 </div>
               ) : (
-                <div className="space-y-3 text-sm">
-                  <p className="text-zinc-300">{displayBio}</p>
-                  <p className="text-zinc-400">Опыт: <span className="text-zinc-200">{displayExperience}</span></p>
-                  <p className="text-zinc-400">Языки: <span className="text-zinc-200">{displayLanguages}</span></p>
+                <div className="space-y-4 text-sm">
+                  <p className="text-zinc-300 leading-relaxed">{displayBio}</p>
+                  <div className="grid gap-2">
+                    <p className="text-zinc-400 flex items-center gap-2"><Clock size={14} className="text-gold-500" />Опыт: <span className="text-zinc-200">{displayExperience}</span></p>
+                    <p className="text-zinc-400 flex items-center gap-2"><User size={14} className="text-gold-500" />Языки: <span className="text-zinc-200">{displayLanguages}</span></p>
+                  </div>
                 </div>
               )}
 
               <div className="mt-5 pt-5 border-t border-zinc-800 space-y-2 text-sm">
                 <p className="text-zinc-400 flex items-center gap-2"><Phone size={14} className="text-gold-500" />{user.phone || 'Телефон не указан'}</p>
                 <p className="text-zinc-400 flex items-center gap-2"><Mail size={14} className="text-gold-500" />{user.email}</p>
-                <p className="text-zinc-500">{formatWorkSchedule(master.workSchedule)}</p>
+                <div className="pt-2">
+                  <p className="text-zinc-500 flex items-center gap-2 mb-3"><Calendar size={14} className="text-gold-500" />График работы</p>
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                    {workScheduleEntries.map((entry) => (
+                      <div key={entry.label} className="flex items-center justify-between border-b border-zinc-900 pb-1">
+                        <span className="text-zinc-500">{entry.label}</span>
+                        <span className="text-zinc-300">{entry.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
 
-            <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-6">
-              <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+            <div className="bg-zinc-950 border border-zinc-800/90 rounded-2xl p-6">
+              <h3 className="text-lg font-serif text-white mb-4 flex items-center gap-2">
                 <Star size={18} className="text-gold-500" />
                 Отзывы по вашим записям
               </h3>
@@ -703,20 +752,6 @@ export const StylistCabinet: React.FC<StylistCabinetProps> = ({
                   ))}
                 </div>
               )}
-            </div>
-
-            <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-6">
-              <h3 className="text-lg font-bold text-white mb-3 flex items-center gap-2">
-                <TrendingUp size={18} className="text-gold-500" />
-                Оперативная сводка
-              </h3>
-              <ul className="space-y-2 text-sm text-zinc-300">
-                <li>Записей в периоде: <span className="text-white">{kpi.total}</span></li>
-                <li>Выручка: <span className="text-white">{formatCurrency(kpi.revenue)}</span></li>
-                <li>Средний чек: <span className="text-white">{formatCurrency(kpi.avgCheck)}</span></li>
-                <li>Конверсия: <span className="text-white">{kpi.conversion.toFixed(1)}%</span></li>
-                <li>Доля неявок: <span className="text-white">{kpi.noShowRate.toFixed(1)}%</span></li>
-              </ul>
             </div>
           </div>
         </div>

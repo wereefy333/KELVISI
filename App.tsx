@@ -91,6 +91,11 @@ const App: React.FC = () => {
   const adminToken = adminSession?.token;
   const activePrivateToken = adminToken || barberToken;
   const activePrivateRole = adminToken ? 'ADMIN' : barberToken ? 'MASTER' : null;
+  const activeBarberMaster = barberUser
+    ? masters.find(master => master.userId === barberUser.id)
+      || masters.find(master => master.name.trim().toLowerCase() === barberUser.name.trim().toLowerCase())
+      || null
+    : null;
 
   useEffect(() => {
     Promise.all([
@@ -300,7 +305,7 @@ const App: React.FC = () => {
           element={
             barberUser ? (
               <StylistCabinet
-                master={masters.find(master => master.userId === barberUser.id) || null}
+                master={activeBarberMaster}
                 user={barberUser}
                 bookings={bookings}
                 reviews={reviews}
