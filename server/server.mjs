@@ -1766,10 +1766,12 @@ async function syncClientsFromBookings(prismaClient = prisma) {
   ]);
 
   const existingClientByKey = new Map();
+  const existingClientByPhone = new Map();
   for (const client of clients) {
     const identity = getClientIdentity(client);
     if (identity) {
       existingClientByKey.set(identity.key, client);
+      existingClientByPhone.set(identity.phone, client);
     }
   }
 
@@ -1783,19 +1785,30 @@ async function syncClientsFromBookings(prismaClient = prisma) {
   }
 
   for (const [key, clientBookings] of groupedBookings.entries()) {
-    const existingClient = existingClientByKey.get(key) ?? null;
+    const identity = getClientIdentity(clientBookings[0]);
+    const existingClient = existingClientByKey.get(key)
+      ?? (identity?.phone ? existingClientByPhone.get(identity.phone) : null)
+      ?? null;
     const nextData = buildClientStatsFromBookings(clientBookings, existingClient);
 
     if (existingClient) {
-      await prismaClient.client.update({
+      const updatedClient = await prismaClient.client.update({
         where: { id: existingClient.id },
         data: nextData,
       });
+      const updatedIdentity = getClientIdentity(updatedClient);
+      if (updatedIdentity) {
+        existingClientByKey.set(updatedIdentity.key, updatedClient);
+        existingClientByPhone.set(updatedIdentity.phone, updatedClient);
+      }
       continue;
     }
 
     const createdClient = await prismaClient.client.create({ data: nextData });
     existingClientByKey.set(key, createdClient);
+    if (identity?.phone) {
+      existingClientByPhone.set(identity.phone, createdClient);
+    }
   }
 }
 
