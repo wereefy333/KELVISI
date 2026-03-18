@@ -1022,12 +1022,99 @@ app.get('/api/clients', authenticate, requireRole('ADMIN'), async (_req, res) =>
   res.json(clients.map(mapClient));
 });
 
+app.post('/api/clients/:id/contact', authenticate, requireRole('ADMIN'), async (req, res) => {
+  try {
+    const client = await prisma.client.findUnique({ where: { id: req.params.id } });
+    if (!client) {
+      return res.status(404).json({ success: false, error: 'Клиент не найден' });
+    }
+
+    const subject = normalizeOptionalString(req.body?.subject, 120) || 'Связаться с клиентом';
+    const message = normalizeOptionalString(req.body?.message, 2000);
+    if (!message) {
+      return res.status(400).json({ success: false, error: 'Введите текст сообщения' });
+    }
+
+    await writeAuditLog({
+      actor: getAuditActor(req),
+      action: 'client.contact.prepare',
+      entity: 'Client',
+      entityId: client.id,
+      details: {
+        subject,
+        hasEmail: Boolean(client.email),
+        messageLength: message.length,
+      },
+    });
+
+    return res.json({
+      success: true,
+      client: mapClient(client),
+      draft: {
+        to: client.email || '',
+        subject,
+        message,
+      },
+    });
+  } catch (error) {
+    return internalServerError(res, 'Не удалось подготовить сообщение клиенту', error, 'prepare client contact');
+  }
+});
+
+app.post('/api/clients/:id/promo', authenticate, requireRole('ADMIN'), async (req, res) => {
+  try {
+    const client = await prisma.client.findUnique({ where: { id: req.params.id } });
+    if (!client) {
+      return res.status(404).json({ success: false, error: 'Клиент не найден' });
+    }
+
+    const code = normalizeOptionalString(req.body?.code, 40)?.toUpperCase();
+    const discount = normalizeOptionalString(req.body?.discount, 60);
+    const message = normalizeOptionalString(req.body?.message, 500);
+    if (!code) {
+      return res.status(400).json({ success: false, error: 'Укажите промокод' });
+    }
+    if (!discount) {
+      return res.status(400).json({ success: false, error: 'Укажите выгоду по промокоду' });
+    }
+
+    const promoMessage = message || `Промокод ${code}: ${discount}`;
+
+    await writeAuditLog({
+      actor: getAuditActor(req),
+      action: 'client.promo.issue',
+      entity: 'Client',
+      entityId: client.id,
+      details: {
+        code,
+        discount,
+      },
+    });
+
+    return res.json({
+      success: true,
+      client: mapClient(client),
+      promo: {
+        code,
+        discount,
+        message: promoMessage,
+      },
+    });
+  } catch (error) {
+    return internalServerError(res, 'Не удалось подготовить промокод', error, 'issue client promo');
+  }
+});
+
 // в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ
 // WAITLIST
 // в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ
 
 app.get('/api/waitlist', authenticate, requireRole('ADMIN'), async (_req, res) => {
-  const entries = await prisma.waitlistEntry.findMany({ orderBy: { createdAt: 'desc' } });
+  await archiveExpiredWaitlistEntries();
+  const entries = await prisma.waitlistEntry.findMany({
+    where: { archivedAt: null },
+    orderBy: { createdAt: 'desc' },
+  });
   res.json(entries.map(mapWaitlist));
 });
 
@@ -1072,7 +1159,7 @@ function mapBooking(b)  {
 }
 function mapReview(r)   { return { ...r, createdAt: r.createdAt?.toISOString() }; }
 function mapClient(c)   { return { ...c, createdAt: c.createdAt?.toISOString() }; }
-function mapWaitlist(w) { return { ...w, createdAt: w.createdAt?.toISOString() }; }
+function mapWaitlist(w) { return { ...w, createdAt: w.createdAt?.toISOString(), archivedAt: w.archivedAt?.toISOString() ?? null }; }
 function mapUser(u)     { const { password: _p, ...safe } = u; return { ...safe, createdAt: safe.createdAt?.toISOString() }; }
 
 function toMinutes(hhmm) {
@@ -1287,7 +1374,7 @@ function bookingHasConflict(existingBookings, options) {
 
 async function acquireBookingSlotLock(tx, masterId, date) {
   const lockKey = `booking:${masterId}:${date}`;
-  await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
 }
 
 const MASTER_ALLOWED_FIELDS = [
@@ -1496,6 +1583,51 @@ function normalizeOptionalString(value, maxLength) {
   return normalized.slice(0, maxLength);
 }
 
+function normalizeIsoDateOnly(value) {
+  const normalized = String(value ?? '').trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(normalized) ? normalized : null;
+}
+
+function getTodayIsoDate() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+function getRelevantWaitlistDates(entry, todayIso = getTodayIsoDate()) {
+  return Array.isArray(entry?.preferredDates)
+    ? entry.preferredDates
+        .map(normalizeIsoDateOnly)
+        .filter((date) => date && date >= todayIso)
+    : [];
+}
+
+function isWaitlistEntryExpired(entry, todayIso = getTodayIsoDate()) {
+  return getRelevantWaitlistDates(entry, todayIso).length === 0;
+}
+
+async function archiveExpiredWaitlistEntries() {
+  const todayIso = getTodayIsoDate();
+  const entries = await prisma.waitlistEntry.findMany({
+    where: { archivedAt: null },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  const expiredIds = entries
+    .filter((entry) => isWaitlistEntryExpired(entry, todayIso))
+    .map((entry) => entry.id);
+
+  if (expiredIds.length === 0) {
+    return { archivedCount: 0, todayIso };
+  }
+
+  await prisma.waitlistEntry.updateMany({
+    where: { id: { in: expiredIds } },
+    data: { archivedAt: new Date() },
+  });
+
+  return { archivedCount: expiredIds.length, todayIso };
+}
+
 function appendSystemNote(existingNotes, systemNote) {
   const current = normalizeOptionalString(existingNotes, 4000);
   if (!current) return systemNote;
@@ -1527,8 +1659,28 @@ setInterval(async () => {
   }
 }, EXPIRE_INTERVAL_MS);
 
+const WAITLIST_ARCHIVE_INTERVAL_MS = 60 * 60 * 1000; // check every hour
+setInterval(async () => {
+  try {
+    const result = await archiveExpiredWaitlistEntries();
+    if (result.archivedCount > 0) {
+      console.log(`Archive waitlist -> ${result.archivedCount} expired entr${result.archivedCount === 1 ? 'y' : 'ies'}`);
+    }
+  } catch (err) {
+    console.error('Waitlist archive error:', err.message);
+  }
+}, WAITLIST_ARCHIVE_INTERVAL_MS);
+
 app.listen(PORT, HOST, async () => {
   await prisma.$connect();
+  try {
+    const result = await archiveExpiredWaitlistEntries();
+    if (result.archivedCount > 0) {
+      console.log(`Archive waitlist on startup -> ${result.archivedCount}`);
+    }
+  } catch (error) {
+    console.error('Waitlist startup archive error:', error.message);
+  }
   console.log(`\nKelvisi API -> http://${HOST}:${PORT} (PostgreSQL via Prisma)`);
   console.log(`Public app URL -> ${APP_PUBLIC_URL}`);
   console.log(`CORS origins -> ${CORS_ORIGINS.join(', ')}`);

@@ -116,4 +116,5 @@ export interface WaitlistEntry {
   preferredDates: string[];
   createdAt: string;
   notified?: boolean;
+  archivedAt?: string | null;
 }

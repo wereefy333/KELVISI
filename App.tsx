@@ -243,6 +243,14 @@ const App: React.FC = () => {
     setReviews(prev => prev.map(review => (review.id === id ? { ...review, status: 'REJECTED' as const } : review)));
   };
 
+  const prepareClientContact = async (clientId: string, payload: { subject: string; message: string }) => {
+    return api.post(`/api/clients/${clientId}/contact`, payload, adminApiToken);
+  };
+
+  const issueClientPromo = async (clientId: string, payload: { code: string; discount: string; message?: string }) => {
+    return api.post(`/api/clients/${clientId}/promo`, payload, adminApiToken);
+  };
+
   const handleBarberLogin = async (email: string, password: string) => {
     try {
       const data = await api.post('/api/auth/login', { email, password, role: 'MASTER' });
@@ -331,6 +339,8 @@ const App: React.FC = () => {
                 onApproveReview={approveReview}
                 onRejectReview={rejectReview}
                 onUpdateBooking={updateBooking}
+                onPrepareClientContact={prepareClientContact}
+                onIssueClientPromo={issueClientPromo}
                 onLogout={() => persistAdminSession(null)}
                 currentUser={adminUser}
               />

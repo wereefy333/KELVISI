@@ -20,6 +20,7 @@ interface WaitlistEntry {
   preferredDates: string[];
   createdAt: string;
   notified?: boolean;
+  archivedAt?: string | null;
 }
 
 interface AdminDashboardProps {
@@ -40,6 +41,8 @@ interface AdminDashboardProps {
   onApproveReview: (id: string) => void;
   onRejectReview: (id: string) => void;
   onUpdateBooking: (id: string, updates: Partial<Booking>) => void;
+  onPrepareClientContact: (clientId: string, payload: { subject: string; message: string }) => Promise<{ draft?: { to?: string; subject?: string; message?: string } }>;
+  onIssueClientPromo: (clientId: string, payload: { code: string; discount: string; message?: string }) => Promise<{ promo?: { code?: string; discount?: string; message?: string } }>;
   onLogout: () => void;
 }
 
@@ -61,6 +64,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onApproveReview,
   onRejectReview,
   onUpdateBooking,
+  onPrepareClientContact,
+  onIssueClientPromo,
   onLogout
 }) => {
   const [activeTab, setActiveTab] = useState<AdminTab>('dashboard');
@@ -69,16 +74,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [editingMaster, setEditingMaster] = useState<Master | null>(null);
   const [showAddMaster, setShowAddMaster] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [contactClient, setContactClient] = useState<Client | null>(null);
+  const [promoClient, setPromoClient] = useState<Client | null>(null);
   
   // Calculate Stats (from DB data loaded into bookings)
   const now = new Date();
   const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const isDateOnOrAfterToday = (date: string) => typeof date === 'string' && date >= todayIso;
   const todayBookings = bookings.filter(b => b.date === todayIso);
   const paidTodayBookings = todayBookings.filter(b => b.status === 'COMPLETED');
   const dashboardRevenueToday = paidTodayBookings.reduce((acc, b) => acc + b.totalPrice, 0);
   const totalBookings = todayBookings.length;
   const completedBookings = paidTodayBookings.length;
   const pendingReviews = reviews.filter(r => r.status === 'PENDING').length;
+  const activeWaitlist = waitlist.filter(entry => entry.preferredDates.some(isDateOnOrAfterToday));
   
   // Inactive clients (not visited in 60 days)
   const inactiveClients = clients.filter(c => {
@@ -104,7 +113,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     { id: 'reviews', label: 'Отзывы', icon: <Star size={18} />, badge: pendingReviews },
     { id: 'clients', label: 'Клиенты', icon: <Users size={18} /> },
     { id: 'users', label: 'Аккаунты', icon: <Shield size={18} />, badge: users.length },
-    { id: 'waitlist', label: 'Лист ожидания', icon: <Bell size={18} />, badge: waitlist.length },
+    { id: 'waitlist', label: 'Лист ожидания', icon: <Bell size={18} />, badge: activeWaitlist.length },
   ];
 
   type DayKey = 0 | 1 | 2 | 3 | 4 | 5 | 6;
@@ -193,6 +202,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     userPhone: linkedUser?.phone || '',
     userPassword: '',
   });
+
+  const openMailClient = (to: string, subject: string, body: string) => {
+    const href = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    window.open(href, '_blank');
+  };
+
+  const copyText = async (value: string) => {
+    if (!navigator?.clipboard?.writeText) return false;
+    await navigator.clipboard.writeText(value);
+    return true;
+  };
 
   // Service Edit Modal
   const ServiceModal = ({ service, onClose }: { service: Service | null; onClose: () => void }) => {
@@ -1242,6 +1262,166 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     </>
   );
 
+  const ContactClientModal = ({ client, onClose }: { client: Client; onClose: () => void }) => {
+    const [subject, setSubject] = useState(`KELVISI: сообщение для ${client.name}`);
+    const [message, setMessage] = useState(client.notes ? `Здравствуйте, ${client.name}!\n\nУчли ваши заметки: ${client.notes}.\n` : `Здравствуйте, ${client.name}!\n\n`);
+    const [error, setError] = useState('');
+    const [resultMessage, setResultMessage] = useState('');
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
+    const handleSubmit = async (e: React.FormEvent) => {
+      e.preventDefault();
+      setError('');
+      setResultMessage('');
+      try {
+        setIsSubmitting(true);
+        const result = await onPrepareClientContact(client.id, { subject, message });
+        const draft = result?.draft;
+        if (draft?.to) {
+          openMailClient(draft.to, draft.subject || subject, draft.message || message);
+          setResultMessage('Черновик письма подготовлен и открыт в почтовом клиенте.');
+        } else {
+          setResultMessage('Черновик подготовлен. У клиента нет email, поэтому письмо не открыто автоматически.');
+        }
+      } catch (submitError) {
+        setError((submitError as Error).message || 'Не удалось подготовить сообщение.');
+      } finally {
+        setIsSubmitting(false);
+      }
+    };
+
+    return (
+      <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+        <div className="bg-zinc-900 border border-zinc-800 w-full max-w-2xl">
+          <div className="p-6 border-b border-zinc-800 flex justify-between items-center">
+            <div>
+              <h3 className="text-white font-serif text-xl">Написать клиенту</h3>
+              <p className="text-zinc-500 text-sm mt-1">{client.name} • {client.email || client.phone}</p>
+            </div>
+            <button onClick={onClose} className="text-zinc-500 hover:text-white"><X size={20} /></button>
+          </div>
+          <form onSubmit={handleSubmit} className="p-6 space-y-4">
+            <div>
+              <label className="block text-zinc-500 text-xs uppercase mb-2">Тема</label>
+              <input
+                type="text"
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+                className="w-full bg-zinc-800 border border-zinc-700 p-3 text-white focus:border-gold-500 outline-none"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-zinc-500 text-xs uppercase mb-2">Сообщение</label>
+              <textarea
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                rows={8}
+                className="w-full bg-zinc-800 border border-zinc-700 p-3 text-white focus:border-gold-500 outline-none resize-none"
+                required
+              />
+            </div>
+            {client.notes && (
+              <div className="text-xs text-amber-400 bg-amber-900/10 border border-amber-900/30 p-3">
+                Заметка по клиенту: {client.notes}
+              </div>
+            )}
+            {error && <div className="text-sm text-red-400">{error}</div>}
+            {resultMessage && <div className="text-sm text-green-400">{resultMessage}</div>}
+            <div className="flex gap-3 pt-2">
+              <Button type="button" variant="ghost" onClick={onClose} className="flex-1">Закрыть</Button>
+              <Button type="submit" className="flex-1" disabled={isSubmitting}>
+                <Mail size={14} className="mr-2" /> {isSubmitting ? 'Подготовка...' : 'Открыть письмо'}
+              </Button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  };
+
+  const PromoClientModal = ({ client, onClose }: { client: Client; onClose: () => void }) => {
+    const [code, setCode] = useState(`KELVISI-${client.name.replace(/\s+/g, '').toUpperCase().slice(0, 6) || 'VIP'}-10`);
+    const [discount, setDiscount] = useState('Скидка 10% на следующий визит');
+    const [message, setMessage] = useState(`Здравствуйте, ${client.name}! Дарим вам промокод на следующий визит.`);
+    const [error, setError] = useState('');
+    const [resultMessage, setResultMessage] = useState('');
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
+    const handleSubmit = async (e: React.FormEvent) => {
+      e.preventDefault();
+      setError('');
+      setResultMessage('');
+      try {
+        setIsSubmitting(true);
+        const result = await onIssueClientPromo(client.id, { code, discount, message });
+        const promo = result?.promo;
+        const preparedText = `${message}\n\nПромокод: ${promo?.code || code}\nУсловие: ${promo?.discount || discount}`;
+        const copied = await copyText(preparedText).catch(() => false);
+        setResultMessage(copied ? 'Промокод подготовлен и скопирован в буфер обмена.' : 'Промокод подготовлен. Скопируй текст вручную из формы.');
+      } catch (submitError) {
+        setError((submitError as Error).message || 'Не удалось подготовить промокод.');
+      } finally {
+        setIsSubmitting(false);
+      }
+    };
+
+    return (
+      <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+        <div className="bg-zinc-900 border border-zinc-800 w-full max-w-2xl">
+          <div className="p-6 border-b border-zinc-800 flex justify-between items-center">
+            <div>
+              <h3 className="text-white font-serif text-xl">Выдать промокод</h3>
+              <p className="text-zinc-500 text-sm mt-1">{client.name} • {client.phone}</p>
+            </div>
+            <button onClick={onClose} className="text-zinc-500 hover:text-white"><X size={20} /></button>
+          </div>
+          <form onSubmit={handleSubmit} className="p-6 space-y-4">
+            <div className="grid md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-zinc-500 text-xs uppercase mb-2">Промокод</label>
+                <input
+                  type="text"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.toUpperCase())}
+                  className="w-full bg-zinc-800 border border-zinc-700 p-3 text-white focus:border-gold-500 outline-none"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-zinc-500 text-xs uppercase mb-2">Выгода</label>
+                <input
+                  type="text"
+                  value={discount}
+                  onChange={(e) => setDiscount(e.target.value)}
+                  className="w-full bg-zinc-800 border border-zinc-700 p-3 text-white focus:border-gold-500 outline-none"
+                  required
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-zinc-500 text-xs uppercase mb-2">Текст для клиента</label>
+              <textarea
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                rows={6}
+                className="w-full bg-zinc-800 border border-zinc-700 p-3 text-white focus:border-gold-500 outline-none resize-none"
+              />
+            </div>
+            {error && <div className="text-sm text-red-400">{error}</div>}
+            {resultMessage && <div className="text-sm text-green-400">{resultMessage}</div>}
+            <div className="flex gap-3 pt-2">
+              <Button type="button" variant="ghost" onClick={onClose} className="flex-1">Закрыть</Button>
+              <Button type="submit" className="flex-1" disabled={isSubmitting}>
+                <Gift size={14} className="mr-2" /> {isSubmitting ? 'Подготовка...' : 'Подготовить промокод'}
+              </Button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  };
+
   // Clients Tab
   const ClientsContent = () => (
     <Card className="p-0 overflow-hidden">
@@ -1289,8 +1469,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <td className="p-4 text-zinc-500 text-xs max-w-[150px] truncate">{client.notes || '-'}</td>
                   <td className="p-4">
                     <div className="flex gap-1">
-                      <button className="p-1 text-zinc-500 hover:text-white" title="Написать"><Mail size={14} /></button>
-                      <button className="p-1 text-zinc-500 hover:text-gold-500" title="Отправить промокод"><Gift size={14} /></button>
+                      <button
+                        className="p-1 text-zinc-500 hover:text-white"
+                        title="Написать"
+                        onClick={() => setContactClient(client)}
+                      >
+                        <Mail size={14} />
+                      </button>
+                      <button
+                        className="p-1 text-zinc-500 hover:text-gold-500"
+                        title="Отправить промокод"
+                        onClick={() => setPromoClient(client)}
+                      >
+                        <Gift size={14} />
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -1383,13 +1575,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       <div className="flex justify-between items-center mb-6">
         <h3 className="text-white font-serif text-xl">Лист ожидания</h3>
         <span className="text-xs bg-gold-500/20 text-gold-500 px-3 py-1 rounded-full">
-          {waitlist.length} в очереди
+          {activeWaitlist.length} в очереди
         </span>
       </div>
       
       <div className="space-y-4">
-        {waitlist.map(entry => {
+        {activeWaitlist.map(entry => {
           const master = masters.find(m => m.id === entry.masterId);
+          const relevantDates = entry.preferredDates.filter(isDateOnOrAfterToday);
           return (
             <Card key={entry.id} className="p-6">
               <div className="flex items-start justify-between gap-4">
@@ -1400,7 +1593,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                   <div className="flex gap-4 text-sm text-zinc-400">
                     <span>Мастер: <span className="text-white">{master?.name || '-'}</span></span>
-                    <span>Даты: <span className="text-white">{entry.preferredDates.join(', ')}</span></span>
+                    <span>Даты: <span className="text-white">{relevantDates.join(', ')}</span></span>
                   </div>
                   <div className="text-zinc-600 text-xs mt-2">Добавлено: {entry.createdAt}</div>
                 </div>
@@ -1412,10 +1605,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           );
         })}
         
-        {waitlist.length === 0 && (
+        {activeWaitlist.length === 0 && (
           <Card className="p-12 text-center">
             <Bell size={48} className="mx-auto text-zinc-700 mb-4" />
-            <p className="text-zinc-500">Лист ожидания пуст</p>
+            <p className="text-zinc-500">В листе ожидания нет актуальных записей</p>
           </Card>
         )}
       </div>
@@ -1477,6 +1670,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         {activeTab === 'users' && <UsersContent />}
         {activeTab === 'waitlist' && <WaitlistContent />}
       </div>
+
+      {contactClient && (
+        <ContactClientModal
+          client={contactClient}
+          onClose={() => setContactClient(null)}
+        />
+      )}
+
+      {promoClient && (
+        <PromoClientModal
+          client={promoClient}
+          onClose={() => setPromoClient(null)}
+        />
+      )}
     </div>
   );
 };

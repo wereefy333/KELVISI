@@ -142,4 +142,5 @@ model WaitlistEntry {
     preferredDates String[]
     notified       Boolean  @default(false)
     createdAt      DateTime @default(now())
+    archivedAt     DateTime?
 }
