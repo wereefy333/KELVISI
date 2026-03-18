@@ -897,37 +897,83 @@ app.post('/api/bookings', async (req, res) => {
   }
 
   const confirmUrl = `${APP_PUBLIC_URL}/confirm?token=${token}`;
+  const safeClientName = escapeHtml(normalizedClientName);
+  const safeServiceName = escapeHtml(serviceId);
+  const safeMasterName = escapeHtml(master.name);
+  const displayDate = new Date(`${date}T00:00:00`).toLocaleDateString('ru-RU', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+  });
+  const displayTotalPrice = `${computedPrice.toLocaleString('ru-RU')} ₽`;
   const htmlBody = `
-    <div style="font-family: Georgia, serif; background: #0a0a0a; color: #e4e4e7; padding: 48px 32px; max-width: 580px; margin: 0 auto; border: 1px solid #27272a;">
-      <h1 style="color: #f59e0b; font-size: 32px; letter-spacing: 6px; text-transform: uppercase; margin: 0 0 4px;">Kelvisi</h1>
-      <p style="color: #71717a; font-size: 12px; letter-spacing: 4px; text-transform: uppercase; margin: 0 0 40px;">Luxury Hair Salon</p>
-      <p style="font-size: 16px;">Здравствуйте, <strong style="color: #fff;">${normalizedClientName}</strong>!</p>
-      <p style="color: #a1a1aa; line-height: 1.6;">Вы записались в салон <strong style="color: #fff;">Kelvisi</strong>. Для активации брони нажмите кнопку ниже.</p>
-      <div style="background: #18181b; border-left: 3px solid #f59e0b; padding: 20px 24px; margin: 32px 0; border-radius: 2px;">
-        <p style="margin: 0 0 10px; font-size: 14px;"><span style="color: #71717a;">Услуга:&nbsp;</span><strong>${serviceId}</strong></p>
-        <p style="margin: 0 0 10px; font-size: 14px;"><span style="color: #71717a;">Дата:&nbsp;&nbsp;&nbsp;&nbsp;</span><strong>${date}</strong></p>
-        <p style="margin: 0 0 10px; font-size: 14px;"><span style="color: #71717a;">Время:&nbsp;&nbsp;</span><strong>${time}</strong></p>
-        <p style="margin: 0; font-size: 14px;"><span style="color: #71717a;">Итого:&nbsp;&nbsp;</span><strong style="color: #f59e0b; font-size: 18px;">${computedPrice} ₽</strong></p>
-      </div>
-      <a href="${confirmUrl}" style="display: inline-block; background: #f59e0b; color: #000; padding: 16px 40px; text-decoration: none; font-weight: bold; font-size: 15px; letter-spacing: 2px; text-transform: uppercase;">
-        Подтвердить запись →
-      </a>
-      <p style="color: #52525b; font-size: 13px; margin-top: 40px; line-height: 1.5;">
-        Или откройте ссылку в браузере:<br/>
-        <a href="${confirmUrl}" style="color: #a1a1aa; word-break: break-all;">${confirmUrl}</a>
-      </p>
-      <hr style="border: none; border-top: 1px solid #27272a; margin: 40px 0 24px;" />
-      <p style="color: #52525b; font-size: 12px; margin: 0;">
-        Если вы не оставляли заявку, просто проигнорируйте письмо.<br/>
-        Неподтвержденная запись будет автоматически отменена через 24 часа.
-      </p>
-    </div>`;
+    <!doctype html>
+    <html lang="ru">
+      <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Подтверждение записи Kelvisi</title>
+      </head>
+      <body style="margin:0; padding:24px; background:#f5f5f5;">
+        <div style="font-family: Georgia, serif; background:#0a0a0a; color:#e4e4e7; padding:48px 32px; max-width:580px; margin:0 auto; border:1px solid #27272a;">
+          <h1 style="color:#f59e0b; font-size:32px; letter-spacing:6px; text-transform:uppercase; margin:0 0 4px;">Kelvisi</h1>
+          <p style="color:#71717a; font-size:12px; letter-spacing:4px; text-transform:uppercase; margin:0 0 32px;">Luxury Hair Salon</p>
+
+          <p style="font-size:18px; line-height:1.5; margin:0 0 16px;">Здравствуйте, <strong style="color:#fff;">${safeClientName}</strong>!</p>
+          <p style="color:#c4c4cc; line-height:1.7; margin:0 0 24px;">
+            Вы оставили запись в салон <strong style="color:#fff;">Kelvisi</strong>.
+            Чтобы бронь стала активной, подтвердите её по кнопке ниже.
+          </p>
+
+          <div style="background:#18181b; border-left:3px solid #f59e0b; padding:20px 24px; margin:0 0 28px; border-radius:2px;">
+            <p style="margin:0 0 10px; font-size:15px;"><span style="color:#8d8d99;">Услуга:&nbsp;</span><strong>${safeServiceName}</strong></p>
+            <p style="margin:0 0 10px; font-size:15px;"><span style="color:#8d8d99;">Мастер:&nbsp;</span><strong>${safeMasterName}</strong></p>
+            <p style="margin:0 0 10px; font-size:15px;"><span style="color:#8d8d99;">Дата:&nbsp;</span><strong>${escapeHtml(displayDate)}</strong></p>
+            <p style="margin:0 0 10px; font-size:15px;"><span style="color:#8d8d99;">Время:&nbsp;</span><strong>${escapeHtml(time)}</strong></p>
+            <p style="margin:0; font-size:15px;"><span style="color:#8d8d99;">Итого:&nbsp;</span><strong style="color:#f59e0b; font-size:20px;">${escapeHtml(displayTotalPrice)}</strong></p>
+          </div>
+
+          <a href="${confirmUrl}" style="display:inline-block; background:#f59e0b; color:#000; padding:16px 36px; text-decoration:none; font-weight:bold; font-size:15px; letter-spacing:1px; text-transform:uppercase; margin-bottom:28px;">
+            Подтвердить запись
+          </a>
+
+          <p style="color:#71717a; font-size:13px; line-height:1.6; margin:0 0 12px;">
+            Если кнопка не сработала, откройте ссылку вручную:
+          </p>
+          <p style="margin:0 0 28px;">
+            <a href="${confirmUrl}" style="color:#c4c4cc; font-size:13px; word-break:break-all;">${confirmUrl}</a>
+          </p>
+
+          <hr style="border:none; border-top:1px solid #27272a; margin:0 0 20px;" />
+          <p style="color:#71717a; font-size:12px; line-height:1.6; margin:0;">
+            Если вы не оставляли заявку, просто проигнорируйте это письмо.<br />
+            Неподтвержденная запись будет автоматически отменена через 24 часа.
+          </p>
+        </div>
+      </body>
+    </html>`;
+  const textBody = [
+    `Здравствуйте, ${normalizedClientName}!`,
+    '',
+    'Вы оставили запись в салон Kelvisi.',
+    'Подтвердите её по ссылке ниже:',
+    confirmUrl,
+    '',
+    `Услуга: ${serviceId}`,
+    `Мастер: ${master.name}`,
+    `Дата: ${displayDate}`,
+    `Время: ${time}`,
+    `Итого: ${displayTotalPrice}`,
+    '',
+    'Если вы не оставляли заявку, просто проигнорируйте это письмо.',
+  ].join('\n');
 
   try {
     await transporter.sendMail({
       from: MAIL_FROM,
       to: normalizedClientEmail,
       subject: '✂ Подтвердите запись в Kelvisi',
+      text: textBody,
       html: htmlBody,
     });
     console.log(`✓ Email sent -> ${normalizedClientEmail} | token: ${token}`);
@@ -1581,6 +1627,15 @@ function normalizeOptionalString(value, maxLength) {
   const normalized = String(value).trim();
   if (!normalized) return null;
   return normalized.slice(0, maxLength);
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function normalizeIsoDateOnly(value) {
