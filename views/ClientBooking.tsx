@@ -2,7 +2,7 @@
 import { Badge, Button, Card, SectionTitle, LazyImage, Lightbox, ZoomHint } from '../components/Shared';
 import { SalonGallery } from '../components/SalonGallery';
 import { Booking, Master, Review, Service, ServiceCategory } from '../types';
-import { Star, Clock, Check, Calendar as CalendarIcon, ArrowRight, ArrowLeft, MapPin, Phone, Mail, Crown, Sparkles, Hourglass, Gem, BadgeCheck, KeyRound } from 'lucide-react';
+import { Star, Clock, Check, Calendar as CalendarIcon, ArrowRight, ArrowLeft, MapPin, Phone, Mail, Crown, Sparkles, Hourglass, Gem, BadgeCheck, KeyRound, Menu, X } from 'lucide-react';
 
 // ── Scroll-reveal component ───────────────────────────────────────────────────
 // Without staggerSelector: the whole div fades+slides up when scrolled into view.
@@ -134,6 +134,9 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({ onBook, services, 
   const [slotPlansByTime, setSlotPlansByTime] = useState<Record<string, SlotPlanItem[]>>({});
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [slotsError, setSlotsError] = useState('');
+  const [isHomeNavScrolled, setIsHomeNavScrolled] = useState(false);
+  const [activeHomeSection, setActiveHomeSection] = useState('hero');
+  const [isMobileHomeMenuOpen, setIsMobileHomeMenuOpen] = useState(false);
   const [formData, setFormData] = useState({ name: '', phone: '', email: '' });
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState('');
@@ -142,6 +145,46 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({ onBook, services, 
   // Auto-scroll to top on step change
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [step]);
+
+  useEffect(() => {
+    if (step !== 'HOME') {
+      setIsMobileHomeMenuOpen(false);
+      return;
+    }
+
+    const sectionIds = ['hero', 'philosophy-section', 'services-section', 'masters-section', 'reviews-section', 'contacts-section'];
+
+    const updateHomeNavState = () => {
+      setIsHomeNavScrolled(window.scrollY > 28);
+
+      if (window.scrollY < 80) {
+        setActiveHomeSection('hero');
+        return;
+      }
+
+      const probeY = window.innerHeight * 0.35;
+      let current = 'hero';
+
+      for (const id of sectionIds) {
+        const element = document.getElementById(id);
+        if (!element) continue;
+        const rect = element.getBoundingClientRect();
+        if (rect.top <= probeY && rect.bottom > probeY) {
+          current = id;
+          break;
+        }
+        if (rect.top <= probeY) {
+          current = id;
+        }
+      }
+
+      setActiveHomeSection(current);
+    };
+
+    updateHomeNavState();
+    window.addEventListener('scroll', updateHomeNavState, { passive: true });
+    return () => window.removeEventListener('scroll', updateHomeNavState);
   }, [step]);
 
   const toMinutes = (hhmm: string) => {
@@ -202,6 +245,22 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({ onBook, services, 
   const getSecondaryAllowedMasterIds = (service: Service): string[] => (
     SERVICE_MASTER_RULES[service.id]?.secondary ?? service.secondaryMasterIds ?? []
   );
+
+  const homeNavItems = [
+    { id: 'philosophy-section', label: 'О салоне' },
+    { id: 'services-section', label: 'Услуги' },
+    { id: 'masters-section', label: 'Мастера' },
+    { id: 'reviews-section', label: 'Отзывы' },
+    { id: 'contacts-section', label: 'Контакты' },
+  ];
+
+  const scrollToHomeSection = (id: string) => {
+    const element = document.getElementById(id);
+    if (!element) return;
+    const y = element.getBoundingClientRect().top + window.scrollY - 104;
+    window.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
+    setIsMobileHomeMenuOpen(false);
+  };
 
   const canUseParallelMode = selectedServices.length > 1;
   const totalPrice = selectedServices.reduce((acc, s) => acc + s.price, 0);
@@ -852,7 +911,7 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({ onBook, services, 
                 </div>
                 <div>
                   <h5 className="text-white font-medium mb-1">Email</h5>
-                  <p className="text-zinc-400">hello@kelvisi.com</p>
+                  <p className="text-zinc-400">kelvisibot@gmail.com</p>
                 </div>
               </div>
               
@@ -878,14 +937,108 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({ onBook, services, 
 
   const StepHome = () => (
     <div className="min-h-screen flex flex-col">
-      <div className="relative h-screen flex items-center justify-center overflow-hidden">
+      <div
+        className="sticky top-0 z-[60] px-3 sm:px-4"
+      >
+        <div
+          className={`container mx-auto px-0 transition-all duration-300 ${
+            isHomeNavScrolled ? 'max-w-6xl' : 'max-w-7xl'
+          }`}
+        >
+          <div
+            className={`transition-all duration-300 ${
+              isHomeNavScrolled
+                ? 'rounded-2xl bg-black/78 shadow-[0_18px_50px_rgba(0,0,0,0.42)] backdrop-blur-2xl'
+                : 'rounded-2xl bg-black/26 shadow-[0_10px_36px_rgba(0,0,0,0.18)] backdrop-blur-xl'
+            }`}
+          >
+            <div className="px-4 sm:px-5">
+              <div className={`flex items-center justify-between gap-4 transition-all duration-300 ${isHomeNavScrolled ? 'py-2.5' : 'py-3.5'}`}>
+                <button
+                  onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                  className="text-left shrink-0"
+                >
+                  <div className="text-white font-serif text-xl sm:text-2xl tracking-[0.26em]">KELVISI</div>
+                  <div className="text-[9px] sm:text-[10px] uppercase tracking-[0.38em] text-zinc-500 mt-1">Luxury Hair Salon</div>
+                </button>
+
+                <div className="hidden lg:flex items-center justify-center gap-1 xl:gap-2 flex-1 px-6">
+                  {homeNavItems.map((item) => {
+                    const isActive = activeHomeSection === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => scrollToHomeSection(item.id)}
+                        className={`px-3 xl:px-4 py-2 text-[11px] uppercase tracking-[0.32em] transition-all ${
+                          isActive
+                            ? 'text-gold-500'
+                            : 'text-zinc-300 hover:text-white'
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="hidden md:flex items-center shrink-0">
+                  <Button
+                    onClick={() => { setIsMobileHomeMenuOpen(false); setStep('GENDER'); }}
+                    className="px-8 xl:px-10 py-3 text-[11px] font-medium uppercase tracking-[0.32em] shadow-none"
+                  >
+                    Записаться онлайн
+                  </Button>
+                </div>
+
+                <button
+                  onClick={() => setIsMobileHomeMenuOpen(prev => !prev)}
+                  className="md:hidden w-11 h-11 rounded-full border border-gold-500/30 bg-black/55 text-white flex items-center justify-center"
+                  aria-label="Открыть меню"
+                >
+                  {isMobileHomeMenuOpen ? <X size={20} /> : <Menu size={20} />}
+                </button>
+              </div>
+
+              <div className={`hidden sm:block overflow-hidden transition-all duration-300 ${isHomeNavScrolled ? 'max-h-10 pb-2' : 'max-h-0 pb-0'}`}>
+                <div className="h-px w-full bg-gradient-to-r from-transparent via-gold-500/40 to-transparent" />
+              </div>
+
+              {isMobileHomeMenuOpen && (
+                <div className="md:hidden pb-4">
+                  <div className="bg-zinc-950/95 backdrop-blur-xl rounded-2xl p-3 flex flex-col gap-2">
+                    {homeNavItems.map((item) => (
+                      <button
+                        key={item.id}
+                        onClick={() => scrollToHomeSection(item.id)}
+                        className={`text-left rounded-xl px-3 py-3 text-sm transition-colors ${
+                          activeHomeSection === item.id ? 'text-gold-500 bg-gold-500/10' : 'text-zinc-300 hover:bg-zinc-900'
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                    <Button
+                      onClick={() => { setIsMobileHomeMenuOpen(false); setStep('GENDER'); }}
+                      className="w-full mt-1 py-3 text-sm"
+                    >
+                      Записаться онлайн
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="hero" className="relative h-screen flex items-center justify-center overflow-hidden">
         {/* Abstract Dark Background */}
         <div
           className="absolute inset-0 bg-cover bg-center opacity-40"
           style={{ backgroundImage: `url('${HOME_HERO_BG}')` }}
         ></div>
         <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/50 to-[#09090b]"></div>
-        
+
         <div className="relative z-10 text-center px-4 max-w-4xl animate-fade-in">
           <p className="text-gold-500 tracking-[0.4em] text-xs md:text-sm font-sans uppercase mb-6 flex items-center justify-center gap-2">
              <span className="w-8 h-[1px] bg-gold-500 inline-block"></span>
@@ -925,7 +1078,7 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({ onBook, services, 
       <FadeIn><SalonGallery /></FadeIn>
       
       <FadeIn>
-        <div className="py-16">
+        <div id="reviews-section" className="py-16">
           <SectionTitle title="Отзывы Гостей" subtitle="Доверие Premium уровня" centered />
           <MarqueeReviews />
         </div>
@@ -977,11 +1130,13 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({ onBook, services, 
       </footer>
       
       {/* Fixed Book Button */}
-      <div className="fixed bottom-6 right-6 z-50 md:hidden">
-        <Button onClick={() => setStep('GENDER')} className="rounded-full w-16 h-16 p-0 shadow-[0_0_30px_rgba(245,158,11,0.4)] flex items-center justify-center">
-          <CalendarIcon size={24} />
-        </Button>
-      </div>
+      {step !== 'HOME' && (
+        <div className="fixed bottom-6 right-6 z-50 md:hidden">
+          <Button onClick={() => setStep('GENDER')} className="rounded-full w-16 h-16 p-0 shadow-[0_0_30px_rgba(245,158,11,0.4)] flex items-center justify-center">
+            <CalendarIcon size={24} />
+          </Button>
+        </div>
+      )}
     </div>
   );
 
