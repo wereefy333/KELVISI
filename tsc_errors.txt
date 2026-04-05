@@ -1,0 +1,6 @@
+views/AdminDashboard.tsx(183,23): error TS1180: Property destructuring pattern expected.
+views/AdminDashboard.tsx(1126,5): error TS2657: JSX expressions must have one parent element.
+views/AdminDashboard.tsx(1151,9): error TS17002: Expected corresponding JSX closing tag for 'Card'.
+views/AdminDashboard.tsx(1213,5): error TS1005: ')' expected.
+views/AdminDashboard.tsx(1215,3): error TS1109: Expression expected.
+views/AdminDashboard.tsx(1689,1): error TS1128: Declaration or statement expected.

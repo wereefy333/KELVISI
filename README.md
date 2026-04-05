@@ -100,7 +100,8 @@
 - `TypeScript`
 - `React Router DOM 7`
 - `Vite 6`
-- `Tailwind CSS` (через CDN + кастомизация в `index.html`)
+- `Vite 6`
+- `Tailwind CSS 3` (сборка через PostCSS, без CDN)
 - `lucide-react` (иконки)
 - `Recharts` (графики в админке)
 
@@ -156,9 +157,10 @@ PostgreSQL
    - клиент подтверждает через `/confirm?token=...`;
    - сервер переводит запись в `CONFIRMED`.
 
-4. **Ролевая авторизация на API**
-   - `POST /api/auth/login` выдает подписанный токен;
-   - приватные методы требуют `Authorization: Bearer <token>`;
+4. **Ролевая авторизация на API (HttpOnly Cookies)**
+   - `POST /api/auth/login` выдает подписанный токен и устанавливает его в защищенную `HttpOnly` cookie.
+   - `GET /api/auth/me` восстанавливает сессию при перезагрузке приложения.
+   - Запросы к API используют `credentials: 'include'`.
    - `ADMIN` и `MASTER` получают только разрешенные им данные и действия.
 
 5. **Авто-отмена неподтвержденных заявок**
@@ -168,7 +170,8 @@ PostgreSQL
 
 ### Текущие меры безопасности
 
-- приватные API защищены токеном `Authorization: Bearer ...`;
+- приватные API проверяют токен из `req.cookies.token` или хедера `Authorization`;
+- авторизация основана на защищенных `HttpOnly` куках для предотвращения XSS атак;
 - роли `ADMIN` и `MASTER` разделены на уровне сервера;
 - пароли в БД хранятся в виде `scrypt`-хеша;
 - SMTP-секреты не хранятся в исходном коде и задаются только через env;
@@ -215,8 +218,8 @@ kelvisi/
 
 - `App.tsx`:
   - единая оркестрация данных и роутинга;
+  - логика гидратации сессии через `/api/auth/me` на старте;
   - раздельная загрузка публичных и приватных данных;
-  - хранение токена сессии для `ADMIN` и `MASTER` в `sessionStorage`;
   - обработчики CRUD и логина;
   - маршруты `/`, `/confirm`, `/barber`, `/admin`.
 
@@ -231,7 +234,8 @@ kelvisi/
   - proxy `/api` -> `http://localhost:3001`.
 
 - `index.html`:
-  - Tailwind CDN, шрифты, кастомные CSS-анимации (`marquee`, `fade`, `shimmer`).
+  - Инициализация React.
+  - Кастомные CSS-правила, перенесенные в `index.css` для сборки вместе с Tailwind.
 
 ### Каталог `views/`
 

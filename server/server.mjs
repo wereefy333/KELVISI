@@ -1,4 +1,5 @@
-﻿import express from 'express';
+import express from 'express';
+import cookieParser from 'cookie-parser';
 import nodemailer from 'nodemailer';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
@@ -29,8 +30,9 @@ if (!CORS_ORIGINS.includes(APP_PUBLIC_URL)) {
 }
 
 app.set('trust proxy', 1);
-app.use(cors({ origin: CORS_ORIGINS }));
+app.use(cors({ origin: CORS_ORIGINS, credentials: true }));
 app.use(express.json());
+app.use(cookieParser());
 
 const MIN_MASTER_PASSWORD_LENGTH = 8;
 const SERVICE_ALLOWED_FIELDS = ['name', 'description', 'price', 'durationMinutes', 'category', 'type', 'isActive'];
@@ -99,11 +101,15 @@ function decodeAuthToken(token) {
 }
 
 async function authenticate(req, res, next) {
-  const authHeader = req.headers.authorization || '';
-  const match = /^Bearer\s+(.+)$/.exec(authHeader);
-  if (!match) return unauthorized(res);
+  let token = req.cookies?.token;
+  if (!token) {
+    const authHeader = req.headers.authorization || '';
+    const match = /^Bearer\s+(.+)$/.exec(authHeader);
+    if (match) token = match[1];
+  }
+  if (!token) return unauthorized(res);
 
-  const tokenPayload = decodeAuthToken(match[1]);
+  const tokenPayload = decodeAuthToken(token);
   if (!tokenPayload) return unauthorized(res, 'Сессия недействительна или истекла');
 
   const user = await prisma.user.findUnique({ where: { id: tokenPayload.sub } });
@@ -474,7 +480,7 @@ app.put('/api/masters/:id', authenticate, requireMasterAccess, async (req, res) 
 
     const allowedFields = canManageAnyMaster
       ? MASTER_ALLOWED_FIELDS
-      : ['bio', 'experience', 'languages'];
+      : ['bio', 'experience', 'languages', 'workSchedule'];
     const data = pickMasterData(pickAllowedFields(req.body, allowedFields));
 
     if (Object.keys(data).length === 0) {
@@ -1203,16 +1209,97 @@ app.post('/api/auth/login', loginRateLimiter, async (req, res) => {
     });
     user.password = hashedPassword;
   }
-  res.json({ success: true, user: mapUser(user), token: encodeAuthToken(user) });
+  
+  const token = encodeAuthToken(user);
+  res.cookie('token', token, {
+    httpOnly: true,
+    sameSite: 'lax',
+    path: '/',
+    secure: process.env.NODE_ENV === 'production',
+  });
+  
+  res.json({ success: true, user: mapUser(user), token });
+});
+
+app.get('/api/auth/me', authenticate, (req, res) => {
+  res.json({ success: true, user: mapUser(req.auth.user) });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  res.clearCookie('token', { path: '/' });
+  res.json({ success: true });
 });
 
 app.get('/api/users', authenticate, requireRole('ADMIN'), async (req, res) => {
   const { role } = req.query;
   const users = await prisma.user.findMany({
-    where: role ? { role: String(role), isActive: true } : { isActive: true },
+    where: role ? { role: String(role) } : undefined,
     orderBy: { name: 'asc' },
   });
   res.json(users.map(mapUser));
+});
+
+app.put('/api/users/:id', authenticate, requireRole('ADMIN'), async (req, res) => {
+  try {
+    const { name, email, role, isActive } = req.body;
+    const data = pickAllowedFields({ name, email, role, isActive }, ['name', 'email', 'role', 'isActive']);
+
+    if (Object.keys(data).length === 0) {
+      return res.status(400).json({ success: false, error: 'Нет доступных полей для обновления' });
+    }
+
+    const currentUserId = req.auth?.user?.id;
+    const isSelfUpdate = currentUserId && currentUserId === req.params.id;
+
+    if (Object.prototype.hasOwnProperty.call(data, 'name')) {
+      data.name = String(data.name ?? '').trim().slice(0, 120);
+      if (!data.name) {
+        return res.status(400).json({ success: false, error: 'Укажите имя пользователя' });
+      }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(data, 'email')) {
+      data.email = String(data.email ?? '').trim().toLowerCase();
+      if (!isValidEmail(data.email)) {
+        return res.status(400).json({ success: false, error: 'Некорректный email пользователя' });
+      }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(data, 'role')) {
+      if (!['CLIENT', 'MASTER', 'ADMIN'].includes(String(data.role))) {
+        return res.status(400).json({ success: false, error: 'Некорректная роль пользователя' });
+      }
+      if (isSelfUpdate && data.role !== 'ADMIN') {
+        return res.status(400).json({ success: false, error: 'Нельзя изменить собственную роль администратора' });
+      }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(data, 'isActive')) {
+      data.isActive = Boolean(data.isActive);
+      if (isSelfUpdate && data.isActive === false) {
+        return res.status(400).json({ success: false, error: 'Нельзя деактивировать собственный аккаунт' });
+      }
+    }
+
+    const user = await prisma.user.update({
+      where: { id: req.params.id },
+      data,
+    });
+    
+    await writeAuditLog({
+      actor: getAuditActor(req),
+      action: 'user.update',
+      entity: 'User',
+      entityId: user.id,
+    });
+    
+    res.json(mapUser(user));
+  } catch (error) {
+    if (error?.code === 'P2025') {
+      return res.status(404).json({ success: false, error: 'Пользователь не найден' });
+    }
+    return internalServerError(res, 'Не удалось обновить пользователя', error, 'update user');
+  }
 });
 
 // в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ

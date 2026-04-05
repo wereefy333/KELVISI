@@ -6,7 +6,7 @@ import {
   Users, DollarSign, Calendar, TrendingUp, Star, 
   Check, X, Edit2, Trash2, Plus, Clock, 
   MessageSquare, Bell, Search, Eye,
-  Scissors, Crown, AlertCircle, Mail, Gift, LogOut, Lock, Shield
+  Scissors, Crown, AlertCircle, Mail, Gift, LogOut, Lock, Shield, Download, ChevronLeft, ChevronRight
 } from 'lucide-react';
 
 type AdminTab = 'dashboard' | 'bookings' | 'services' | 'masters' | 'reviews' | 'clients' | 'users' | 'waitlist';
@@ -20,7 +20,6 @@ interface WaitlistEntry {
   preferredDates: string[];
   createdAt: string;
   notified?: boolean;
-  archivedAt?: string | null;
 }
 
 interface AdminDashboardProps {
@@ -38,13 +37,104 @@ interface AdminDashboardProps {
   onUpdateMaster: (master: Master) => Promise<void> | void;
   onAddMaster: (master: Omit<Master, 'id'>) => Promise<void> | void;
   onDeleteMaster: (id: string) => Promise<void> | void;
+  onUpdateUser: (id: string, updates: Partial<User>) => Promise<void> | void;
   onApproveReview: (id: string) => void;
   onRejectReview: (id: string) => void;
   onUpdateBooking: (id: string, updates: Partial<Booking>) => void;
-  onPrepareClientContact: (clientId: string, payload: { subject: string; message: string }) => Promise<{ draft?: { to?: string; subject?: string; message?: string } }>;
-  onIssueClientPromo: (clientId: string, payload: { code: string; discount: string; message?: string }) => Promise<{ promo?: { code?: string; discount?: string; message?: string } }>;
-  onGetClientBookings: (clientId: string) => Promise<Booking[]>;
   onLogout: () => void;
+}
+
+type AnalyticsPeriod = 'WEEK' | 'MONTH' | 'YEAR';
+type BookingStatusFilter = 'ALL' | Booking['status'];
+
+const BOOKING_STATUS_LABELS: Record<Booking['status'], string> = {
+  PENDING: 'Ожидает',
+  PENDING_EMAIL: 'Ожидает email',
+  CONFIRMED: 'Подтверждено',
+  IN_PROGRESS: 'В процессе',
+  COMPLETED: 'Завершено',
+  CANCELLED: 'Отменено',
+  NO_SHOW: 'Не пришел',
+};
+
+const BOOKING_STATUS_BADGES: Record<Booking['status'], string> = {
+  PENDING: 'border-zinc-700 bg-zinc-800 text-zinc-300',
+  PENDING_EMAIL: 'border-zinc-700 bg-zinc-800 text-zinc-300',
+  CONFIRMED: 'border-green-900 text-green-500 bg-green-900/10',
+  IN_PROGRESS: 'border-amber-900 text-amber-500 bg-amber-900/10',
+  COMPLETED: 'border-blue-900 text-blue-500 bg-blue-900/10',
+  CANCELLED: 'border-red-900 text-red-500 bg-red-900/10',
+  NO_SHOW: 'border-orange-900 text-orange-500 bg-orange-900/10',
+};
+
+const ANALYTICS_LABELS: Record<AnalyticsPeriod, string> = {
+  WEEK: 'Эта неделя',
+  MONTH: 'Этот месяц',
+  YEAR: 'Этот год',
+};
+
+const BOOKINGS_PAGE_SIZE = 12;
+
+function toIsoDate(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function parseLocalDate(dateStr: string, time = '00:00'): Date {
+  const [year, month, day] = String(dateStr).split('-').map(Number);
+  const [hours, minutes] = String(time).split(':').map(Number);
+  return new Date(year || 1970, (month || 1) - 1, day || 1, hours || 0, minutes || 0, 0, 0);
+}
+
+function shiftDate(date: Date, days: number): Date {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function startOfWeek(date: Date): Date {
+  const next = new Date(date);
+  const diff = (next.getDay() + 6) % 7;
+  next.setHours(0, 0, 0, 0);
+  next.setDate(next.getDate() - diff);
+  return next;
+}
+
+function getAnalyticsRange(period: AnalyticsPeriod, now: Date): { start: string; end: string } {
+  const end = new Date(now);
+  end.setHours(0, 0, 0, 0);
+
+  if (period === 'WEEK') {
+    const start = startOfWeek(end);
+    return { start: toIsoDate(start), end: toIsoDate(shiftDate(start, 6)) };
+  }
+
+  if (period === 'MONTH') {
+    const start = new Date(end.getFullYear(), end.getMonth(), 1);
+    const monthEnd = new Date(end.getFullYear(), end.getMonth() + 1, 0);
+    return { start: toIsoDate(start), end: toIsoDate(monthEnd) };
+  }
+
+  const yearStart = new Date(end.getFullYear(), 0, 1);
+  const yearEnd = new Date(end.getFullYear(), 11, 31);
+  return { start: toIsoDate(yearStart), end: toIsoDate(yearEnd) };
+}
+
+function escapeCsvCell(value: unknown): string {
+  const text = String(value ?? '');
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function downloadCsv(filename: string, rows: unknown[][]): void {
+  const csv = `\uFEFF${rows.map((row) => row.map(escapeCsvCell).join(';')).join('\r\n')}`;
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ 
@@ -62,12 +152,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onUpdateMaster,
   onAddMaster,
   onDeleteMaster,
+  onUpdateUser,
   onApproveReview,
   onRejectReview,
   onUpdateBooking,
-  onPrepareClientContact,
-  onIssueClientPromo,
-  onGetClientBookings,
   onLogout
 }) => {
   const [activeTab, setActiveTab] = useState<AdminTab>('dashboard');
@@ -76,50 +164,137 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [editingMaster, setEditingMaster] = useState<Master | null>(null);
   const [showAddMaster, setShowAddMaster] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [clientSearchQuery, setClientSearchQuery] = useState('');
-  const [contactClient, setContactClient] = useState<Client | null>(null);
-  const [promoClient, setPromoClient] = useState<Client | null>(null);
-  const [selectedClient, setSelectedClient] = useState<Client | null>(null);
-  const [selectedClientBookings, setSelectedClientBookings] = useState<Booking[]>([]);
-  const [selectedClientLoading, setSelectedClientLoading] = useState(false);
-  const [selectedClientError, setSelectedClientError] = useState('');
-  
-  // Calculate Stats (from DB data loaded into bookings)
+  const [analyticsPeriod, setAnalyticsPeriod] = useState<AnalyticsPeriod>('WEEK');
+  const [bookingDateFrom, setBookingDateFrom] = useState(() => getAnalyticsRange('MONTH', new Date()).start);
+  const [bookingDateTo, setBookingDateTo] = useState(() => getAnalyticsRange('MONTH', new Date()).end);
+  const [bookingMasterFilter, setBookingMasterFilter] = useState<string>('ALL');
+  const [bookingStatusFilter, setBookingStatusFilter] = useState<BookingStatusFilter>('ALL');
+  const [bookingsPage, setBookingsPage] = useState(1);
+
   const now = new Date();
-  const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  const isDateOnOrAfterToday = (date: string) => typeof date === 'string' && date >= todayIso;
+  const todayIso = toIsoDate(now);
+  const analyticsRange = getAnalyticsRange(analyticsPeriod, now);
   const todayBookings = bookings.filter(b => b.date === todayIso);
-  const paidTodayBookings = todayBookings.filter(b => b.status === 'COMPLETED');
-  const dashboardRevenueToday = paidTodayBookings.reduce((acc, b) => acc + b.totalPrice, 0);
-  const totalBookings = todayBookings.length;
-  const completedBookings = paidTodayBookings.length;
   const pendingReviews = reviews.filter(r => r.status === 'PENDING').length;
-  const activeWaitlist = waitlist.filter(entry => entry.preferredDates.some(isDateOnOrAfterToday));
-  const filteredClients = clients.filter(client => {
-    const query = clientSearchQuery.trim().toLowerCase();
-    if (!query) return true;
-    return (
-      client.name.toLowerCase().includes(query) ||
-      client.phone.toLowerCase().includes(query) ||
-      (client.email || '').toLowerCase().includes(query)
-    );
-  });
-  
+  const totalBookings = bookings.length;
+
+  const analyticsBookings = bookings
+    .filter((booking) => booking.date >= analyticsRange.start && booking.date <= analyticsRange.end)
+    .sort((a, b) => parseLocalDate(a.date, a.time).getTime() - parseLocalDate(b.date, b.time).getTime());
+  const analyticsCompletedBookings = analyticsBookings.filter((booking) => booking.status === 'COMPLETED');
+  const analyticsRevenue = analyticsCompletedBookings.reduce((acc, booking) => acc + booking.totalPrice, 0);
+  const analyticsCompletedCount = analyticsCompletedBookings.length;
+  const analyticsAverageCheck = analyticsCompletedCount > 0 ? Math.round(analyticsRevenue / analyticsCompletedCount) : 0;
+  const analyticsCancelledCount = analyticsBookings.filter((booking) => ['CANCELLED', 'NO_SHOW'].includes(booking.status)).length;
+  const analyticsUniqueClients = new Set(analyticsBookings.map((booking) => booking.clientPhone)).size;
+  const analyticsReviewCount = reviews.filter((review) => {
+    if (!review.createdAt) return false;
+    const createdAt = review.createdAt.slice(0, 10);
+    return createdAt >= analyticsRange.start && createdAt <= analyticsRange.end;
+  }).length;
+
+  const chartData = analyticsPeriod === 'YEAR'
+    ? Array.from({ length: 12 }, (_, monthIndex) => {
+        const monthDate = new Date(now.getFullYear(), monthIndex, 1);
+        const nextMonth = new Date(now.getFullYear(), monthIndex + 1, 1);
+        const revenue = analyticsCompletedBookings
+          .filter((booking) => {
+            const bookingDate = parseLocalDate(booking.date);
+            return bookingDate >= monthDate && bookingDate < nextMonth;
+          })
+          .reduce((sum, booking) => sum + booking.totalPrice, 0);
+        return {
+          name: new Intl.DateTimeFormat('ru-RU', { month: 'short' }).format(monthDate),
+          revenue,
+        };
+      })
+    : (() => {
+        const start = parseLocalDate(analyticsRange.start);
+        const end = parseLocalDate(analyticsRange.end);
+        const result: { name: string; revenue: number }[] = [];
+        const cursor = new Date(start);
+
+        while (cursor <= end) {
+          const iso = toIsoDate(cursor);
+          const revenue = analyticsCompletedBookings
+            .filter((booking) => booking.date === iso)
+            .reduce((sum, booking) => sum + booking.totalPrice, 0);
+          result.push({
+            name: analyticsPeriod === 'WEEK'
+              ? new Intl.DateTimeFormat('ru-RU', { weekday: 'short' }).format(cursor)
+              : new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short' }).format(cursor),
+            revenue,
+          });
+          cursor.setDate(cursor.getDate() + 1);
+        }
+
+        return result;
+      })();
+
+  const filteredBookings = bookings
+    .filter((booking) => booking.date >= bookingDateFrom && booking.date <= bookingDateTo)
+    .filter((booking) => bookingMasterFilter === 'ALL' || booking.masterId === bookingMasterFilter)
+    .filter((booking) => bookingStatusFilter === 'ALL' || booking.status === bookingStatusFilter)
+    .filter((booking) => {
+      const normalizedSearch = searchQuery.trim().toLowerCase();
+      if (!normalizedSearch) return true;
+      const masterName = masters.find((master) => master.id === booking.masterId)?.name ?? '';
+      return [
+        booking.clientName,
+        booking.clientPhone,
+        booking.serviceId,
+        masterName,
+      ].some((value) => value.toLowerCase().includes(normalizedSearch));
+    })
+    .sort((a, b) => parseLocalDate(b.date, b.time).getTime() - parseLocalDate(a.date, a.time).getTime());
+
+  const totalBookingsPages = Math.max(1, Math.ceil(filteredBookings.length / BOOKINGS_PAGE_SIZE));
+  const currentBookingsPage = Math.min(bookingsPage, totalBookingsPages);
+  const paginatedBookings = filteredBookings.slice(
+    (currentBookingsPage - 1) * BOOKINGS_PAGE_SIZE,
+    currentBookingsPage * BOOKINGS_PAGE_SIZE,
+  );
+
+  const downloadBookingsReport = () => {
+    downloadCsv(`bookings-${bookingDateFrom}-${bookingDateTo}.csv`, [
+      ['ID', 'Дата', 'Время', 'Клиент', 'Телефон', 'Услуга', 'Мастер', 'Статус', 'Сумма', 'Заметки'],
+      ...filteredBookings.map((booking) => [
+        booking.id,
+        booking.date,
+        booking.time,
+        booking.clientName,
+        booking.clientPhone,
+        booking.serviceId,
+        masters.find((master) => master.id === booking.masterId)?.name || '',
+        BOOKING_STATUS_LABELS[booking.status],
+        booking.totalPrice,
+        booking.notes || '',
+      ]),
+    ]);
+  };
+
+  const downloadClientsReport = () => {
+    downloadCsv(`clients-${todayIso}.csv`, [
+      ['ID', 'Клиент', 'Телефон', 'Email', 'Визитов', 'Потрачено', 'Последний визит', 'Заметки'],
+      ...clients.map((client) => [
+        client.id,
+        client.name,
+        client.phone,
+        client.email || '',
+        client.totalVisits,
+        client.totalSpent,
+        client.lastVisit || '',
+        client.notes || '',
+      ]),
+    ]);
+  };
+
   // Inactive clients (not visited in 60 days)
   const inactiveClients = clients.filter(c => {
     if (!c.lastVisit) return true;
     const daysSinceVisit = Math.floor((now.getTime() - new Date(c.lastVisit).getTime()) / (1000 * 60 * 60 * 24));
     return daysSinceVisit > 60;
   });
-  
-  // Prepare Chart Data (revenue by paid/completed bookings today)
-  const chartHours = ['10:00', '12:00', '14:00', '16:00', '18:00', '20:00'];
-  const chartData = chartHours.map((hour) => ({
-    name: hour,
-    revenue: paidTodayBookings
-      .filter((b) => b.time === hour)
-      .reduce((sum, booking) => sum + booking.totalPrice, 0),
-  }));
 
   const tabs: { id: AdminTab; label: string; icon: React.ReactNode; badge?: number }[] = [
     { id: 'dashboard', label: 'Сводка', icon: <TrendingUp size={18} /> },
@@ -129,7 +304,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     { id: 'reviews', label: 'Отзывы', icon: <Star size={18} />, badge: pendingReviews },
     { id: 'clients', label: 'Клиенты', icon: <Users size={18} /> },
     { id: 'users', label: 'Аккаунты', icon: <Shield size={18} />, badge: users.length },
-    { id: 'waitlist', label: 'Лист ожидания', icon: <Bell size={18} />, badge: activeWaitlist.length },
+    { id: 'waitlist', label: 'Лист ожидания', icon: <Bell size={18} />, badge: waitlist.length },
   ];
 
   type DayKey = 0 | 1 | 2 | 3 | 4 | 5 | 6;
@@ -218,32 +393,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     userPhone: linkedUser?.phone || '',
     userPassword: '',
   });
-
-  const openMailClient = (to: string, subject: string, body: string) => {
-    const href = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    window.open(href, '_blank');
-  };
-
-  const copyText = async (value: string) => {
-    if (!navigator?.clipboard?.writeText) return false;
-    await navigator.clipboard.writeText(value);
-    return true;
-  };
-
-  const openClientDetails = async (client: Client) => {
-    setSelectedClient(client);
-    setSelectedClientBookings([]);
-    setSelectedClientError('');
-    try {
-      setSelectedClientLoading(true);
-      const result = await onGetClientBookings(client.id);
-      setSelectedClientBookings(Array.isArray(result) ? result : []);
-    } catch (error) {
-      setSelectedClientError((error as Error).message || 'Не удалось загрузить записи клиента');
-    } finally {
-      setSelectedClientLoading(false);
-    }
-  };
 
   // Service Edit Modal
   const ServiceModal = ({ service, onClose }: { service: Service | null; onClose: () => void }) => {
@@ -828,62 +977,95 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Dashboard Tab
   const DashboardContent = () => (
     <>
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+        <div>
+          <h3 className="text-white font-serif text-2xl">Аналитика салона</h3>
+          <p className="text-zinc-500 text-sm mt-1">{analyticsRange.start} — {analyticsRange.end}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {(['WEEK', 'MONTH', 'YEAR'] as AnalyticsPeriod[]).map((period) => (
+            <button
+              key={period}
+              onClick={() => setAnalyticsPeriod(period)}
+              className={`px-4 py-2 text-sm border transition-colors ${
+                analyticsPeriod === period
+                  ? 'border-gold-500 bg-gold-500 text-black'
+                  : 'border-zinc-700 bg-zinc-900 text-zinc-300 hover:text-white'
+              }`}
+            >
+              {ANALYTICS_LABELS[period]}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4 mb-8">
         <Card className="p-6">
           <div className="flex justify-between items-start">
             <div>
-              <p className="text-zinc-500 text-xs uppercase">Выручка за сегодня</p>
-              <h3 className="text-2xl text-gold-500 font-serif mt-1">{dashboardRevenueToday.toLocaleString('ru-RU')} ₽</h3>
+              <p className="text-zinc-500 text-xs uppercase">Выручка периода</p>
+              <h3 className="text-2xl text-gold-500 font-serif mt-1">{analyticsRevenue.toLocaleString('ru-RU')} ₽</h3>
             </div>
-            <DollarSign className="text-zinc-600" size={20}/>
+            <DollarSign className="text-zinc-600" size={20} />
           </div>
         </Card>
         <Card className="p-6">
           <div className="flex justify-between items-start">
             <div>
-              <p className="text-zinc-500 text-xs uppercase">Записей сегодня</p>
-              <h3 className="text-2xl text-white font-serif mt-1">{totalBookings}</h3>
-              <p className="text-green-500 text-xs mt-1">✓ {completedBookings} завершено</p>
+              <p className="text-zinc-500 text-xs uppercase">Записи периода</p>
+              <h3 className="text-2xl text-white font-serif mt-1">{analyticsBookings.length}</h3>
+              <p className="text-green-500 text-xs mt-1">✓ {analyticsCompletedCount} завершено</p>
             </div>
-            <Calendar className="text-zinc-600" size={20}/>
+            <Calendar className="text-zinc-600" size={20} />
           </div>
         </Card>
         <Card className="p-6">
           <div className="flex justify-between items-start">
             <div>
               <p className="text-zinc-500 text-xs uppercase">Средний чек</p>
-              <h3 className="text-2xl text-white font-serif mt-1">{completedBookings ? Math.round(dashboardRevenueToday / completedBookings) : 0} ₽</h3>
+              <h3 className="text-2xl text-white font-serif mt-1">{analyticsAverageCheck.toLocaleString('ru-RU')} ₽</h3>
             </div>
-            <TrendingUp className="text-zinc-600" size={20}/>
+            <TrendingUp className="text-zinc-600" size={20} />
           </div>
         </Card>
         <Card className="p-6">
           <div className="flex justify-between items-start">
             <div>
-              <p className="text-zinc-500 text-xs uppercase">Ожидают модерации</p>
-              <h3 className="text-2xl text-white font-serif mt-1">{pendingReviews}</h3>
-              <p className="text-gold-500 text-xs mt-1">отзывов</p>
+              <p className="text-zinc-500 text-xs uppercase">Уникальных клиентов</p>
+              <h3 className="text-2xl text-white font-serif mt-1">{analyticsUniqueClients}</h3>
+              <p className="text-zinc-500 text-xs mt-1">за выбранный период</p>
             </div>
-            <MessageSquare className="text-zinc-600" size={20}/>
+            <Users className="text-zinc-600" size={20} />
+          </div>
+        </Card>
+        <Card className="p-6">
+          <div className="flex justify-between items-start">
+            <div>
+              <p className="text-zinc-500 text-xs uppercase">Риски периода</p>
+              <h3 className="text-2xl text-white font-serif mt-1">{analyticsCancelledCount}</h3>
+              <p className="text-gold-500 text-xs mt-1">{analyticsReviewCount} отзывов, {pendingReviews} на модерации</p>
+            </div>
+            <MessageSquare className="text-zinc-600" size={20} />
           </div>
         </Card>
       </div>
 
-      {/* Charts & Chessboard */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
         <Card className="p-6">
-          <h3 className="text-white font-serif mb-6">Динамика выручки</h3>
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-white font-serif">Динамика выручки</h3>
+            <span className="text-xs text-zinc-500">{ANALYTICS_LABELS[analyticsPeriod]}</span>
+          </div>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#333" />
                 <XAxis dataKey="name" stroke="#666" />
                 <YAxis stroke="#666" tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} />
-                <Tooltip 
-                  contentStyle={{ backgroundColor: '#18181b', borderColor: '#333', color: '#fff' }} 
+                <Tooltip
+                  contentStyle={{ backgroundColor: '#18181b', borderColor: '#333', color: '#fff' }}
                   itemStyle={{ color: '#fbbf24' }}
-                  formatter={(value) => [`${Number(value).toLocaleString('ru-RU')} \u20BD`, '\u0412\u044b\u0440\u0443\u0447\u043a\u0430']}
+                  formatter={(value) => [`${Number(value).toLocaleString('ru-RU')} ₽`, 'Выручка']}
                 />
                 <Line type="monotone" dataKey="revenue" stroke="#fbbf24" strokeWidth={2} />
               </LineChart>
@@ -892,49 +1074,35 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </Card>
 
         <Card className="p-6">
-          <h3 className="text-white font-serif mb-6">{'\u0420\u0430\u0441\u043f\u0438\u0441\u0430\u043d\u0438\u0435 \u043c\u0430\u0441\u0442\u0435\u0440\u043e\u0432 \u043d\u0430 \u0441\u0435\u0433\u043e\u0434\u043d\u044f'}</h3>
-          <div className="overflow-x-auto">
-             <div className="min-w-[500px]">
-                {/* Header */}
-                <div className="grid gap-1" style={{ gridTemplateColumns: `80px repeat(${masters.filter(m => m.isActive).length}, 1fr)` }}>
-                  <div className="text-zinc-500 text-xs uppercase p-2">Время</div>
-                  {masters.filter(m => m.isActive).map(master => (
-                    <div key={master.id} className="text-zinc-500 text-xs uppercase p-2 text-center truncate">
-                      {master.name.split(' ')[0]}
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-white font-serif">Загрузка мастеров сегодня</h3>
+            <span className="text-xs text-zinc-500">{todayIso}</span>
+          </div>
+          <div className="space-y-3">
+            {masters.filter((master) => master.isActive).map((master) => {
+              const masterTodayBookings = todayBookings.filter((booking) => booking.masterId === master.id);
+              const masterRevenue = masterTodayBookings
+                .filter((booking) => booking.status === 'COMPLETED')
+                .reduce((sum, booking) => sum + booking.totalPrice, 0);
+              return (
+                <div key={master.id} className="border border-zinc-800 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-white font-medium">{master.name}</p>
+                      <p className="text-zinc-500 text-sm">{master.role}</p>
                     </div>
-                  ))}
+                    <div className="text-right">
+                      <p className="text-white text-sm">{masterTodayBookings.length} записей</p>
+                      <p className="text-gold-500 text-sm">{masterRevenue.toLocaleString('ru-RU')} ₽</p>
+                    </div>
+                  </div>
                 </div>
-                {/* Rows */}
-                {['10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00'].map(hour => {
-                  return (
-                    <div key={hour} className="grid gap-1 border-t border-zinc-800" style={{ gridTemplateColumns: `80px repeat(${masters.filter(m => m.isActive).length}, 1fr)` }}>
-                      <div className="text-zinc-400 font-mono text-sm p-2">{hour}</div>
-                      {masters.filter(m => m.isActive).map(master => {
-                        const booking = bookings.find(b => b.masterId === master.id && b.time === hour && b.date === todayIso);
-                        return (
-                          <div 
-                            key={master.id} 
-                            className={`m-0.5 rounded p-1 text-[9px] truncate ${
-                              booking 
-                                ? booking.status === 'COMPLETED' 
-                                  ? 'bg-green-900/30 text-green-500' 
-                                  : 'bg-gold-500/20 text-gold-500'
-                                : 'bg-zinc-800/50'
-                            }`}
-                          >
-                            {booking?.clientName.split(' ')[0] || ''}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
-             </div>
+              );
+            })}
           </div>
         </Card>
       </div>
 
-      {/* Alerts Section */}
       {inactiveClients.length > 0 && (
         <Card className="p-6 border-amber-900/50 mb-8">
           <div className="flex items-start gap-4">
@@ -943,15 +1111,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <h4 className="text-white font-medium mb-2">Клиенты требуют внимания</h4>
               <p className="text-zinc-400 text-sm mb-4">
                 {inactiveClients.length} клиентов не посещали салон более 60 дней.
-                Рекомендуем отправить им специальное предложение.
               </p>
               <div className="flex gap-2 flex-wrap">
-                {inactiveClients.slice(0, 3).map(c => (
-                  <span key={c.id} className="text-xs bg-zinc-800 px-2 py-1 text-zinc-400">{c.name}</span>
+                {inactiveClients.slice(0, 4).map((client) => (
+                  <span key={client.id} className="text-xs bg-zinc-800 px-2 py-1 text-zinc-400">{client.name}</span>
                 ))}
-                {inactiveClients.length > 3 && (
-                  <span className="text-xs text-zinc-600">и еще {inactiveClients.length - 3}</span>
-                )}
               </div>
             </div>
             <Button variant="outline" className="shrink-0 text-xs px-3 py-2">
@@ -961,7 +1125,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </Card>
       )}
 
-      {/* Recent Bookings */}
       <Card className="p-0 overflow-hidden">
         <div className="p-6 border-b border-zinc-800 flex justify-between items-center">
           <h3 className="text-white font-serif">Последние записи</h3>
@@ -982,30 +1145,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-800">
-              {bookings.slice(0, 5).map(booking => {
-                const master = masters.find(m => m.id === booking.masterId);
+              {filteredBookings.slice(0, 5).map((booking) => {
+                const master = masters.find((item) => item.id === booking.masterId);
                 return (
                   <tr key={booking.id} className="hover:bg-zinc-800/30 transition-colors">
                     <td className="p-4 text-white font-mono">
-                      {booking.date.split('-').reverse().join('.')} <br/>
+                      {booking.date.split('-').reverse().join('.')} <br />
                       <span className="text-zinc-500">{booking.time}</span>
                     </td>
                     <td className="p-4 text-white">{booking.clientName}</td>
                     <td className="p-4">{booking.serviceId}</td>
                     <td className="p-4">{master?.name || '-'}</td>
                     <td className="p-4">
-                      <span className={`px-2 py-1 rounded text-xs border ${
-                          booking.status === 'CONFIRMED' ? 'border-green-900 text-green-500 bg-green-900/10' : 
-                          booking.status === 'COMPLETED' ? 'border-blue-900 text-blue-500 bg-blue-900/10' :
-                          booking.status === 'CANCELLED' ? 'border-red-900 text-red-500 bg-red-900/10' :
-                          booking.status === 'NO_SHOW' ? 'border-orange-900 text-orange-500 bg-orange-900/10' :
-                          'border-zinc-700 bg-zinc-800 text-zinc-400'
-                      }`}>
-                        {booking.status === 'CONFIRMED' ? 'Подтв.' :
-                         booking.status === 'COMPLETED' ? 'Завершено' :
-                         booking.status === 'CANCELLED' ? 'Отменено' :
-                         booking.status === 'NO_SHOW' ? 'Не пришел' :
-                         booking.status === 'IN_PROGRESS' ? 'В процессе' : 'Ожидает'}
+                      <span className={`px-2 py-1 rounded text-xs border ${BOOKING_STATUS_BADGES[booking.status]}`}>
+                        {BOOKING_STATUS_LABELS[booking.status]}
                       </span>
                     </td>
                     <td className="p-4 text-right text-gold-500 font-mono">{booking.totalPrice} ₽</td>
@@ -1022,18 +1175,96 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Bookings Tab
   const BookingsContent = () => (
     <Card className="p-0 overflow-hidden">
-      <div className="p-6 border-b border-zinc-800 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <h3 className="text-white font-serif">Все записи</h3>
-        <div className="flex gap-4 w-full md:w-auto">
-          <div className="relative flex-1 md:flex-none">
+      <div className="p-6 border-b border-zinc-800 space-y-4">
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+          <div>
+            <h3 className="text-white font-serif text-xl">Все записи</h3>
+            <p className="text-zinc-500 text-sm mt-1">Фильтры по периоду, мастеру и статусу уже готовы для больших объёмов данных.</p>
+          </div>
+          <Button variant="outline" onClick={downloadBookingsReport} className="text-xs px-3 py-2">
+            <Download size={14} className="mr-2" /> Скачать отчет CSV
+          </Button>
+        </div>
+
+        <div className="grid xl:grid-cols-[1.2fr_repeat(4,minmax(0,1fr))] gap-3">
+          <div className="relative">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
-            <input 
-              type="text" 
-              placeholder="Поиск по имени..."
+            <input
+              type="text"
+              placeholder="Клиент, телефон, услуга, мастер"
               value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="pl-10 pr-4 py-2 bg-zinc-800 border border-zinc-700 text-white text-sm w-full md:w-64 focus:border-gold-500 outline-none"
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setBookingsPage(1);
+              }}
+              className="pl-10 pr-4 py-2 bg-zinc-800 border border-zinc-700 text-white text-sm w-full focus:border-gold-500 outline-none"
             />
+          </div>
+          <input
+            type="date"
+            value={bookingDateFrom}
+            onChange={(e) => {
+              setBookingDateFrom(e.target.value);
+              setBookingsPage(1);
+            }}
+            className="px-3 py-2 bg-zinc-800 border border-zinc-700 text-white text-sm focus:border-gold-500 outline-none"
+          />
+          <input
+            type="date"
+            value={bookingDateTo}
+            onChange={(e) => {
+              setBookingDateTo(e.target.value);
+              setBookingsPage(1);
+            }}
+            className="px-3 py-2 bg-zinc-800 border border-zinc-700 text-white text-sm focus:border-gold-500 outline-none"
+          />
+          <select
+            value={bookingMasterFilter}
+            onChange={(e) => {
+              setBookingMasterFilter(e.target.value);
+              setBookingsPage(1);
+            }}
+            className="px-3 py-2 bg-zinc-800 border border-zinc-700 text-white text-sm focus:border-gold-500 outline-none"
+          >
+            <option value="ALL">Все мастера</option>
+            {masters.map((master) => (
+              <option key={master.id} value={master.id}>{master.name}</option>
+            ))}
+          </select>
+          <select
+            value={bookingStatusFilter}
+            onChange={(e) => {
+              setBookingStatusFilter(e.target.value as BookingStatusFilter);
+              setBookingsPage(1);
+            }}
+            className="px-3 py-2 bg-zinc-800 border border-zinc-700 text-white text-sm focus:border-gold-500 outline-none"
+          >
+            <option value="ALL">Все статусы</option>
+            {Object.entries(BOOKING_STATUS_LABELS).map(([status, label]) => (
+              <option key={status} value={status}>{label}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+          <div className="text-zinc-500">
+            Найдено: <span className="text-white">{filteredBookings.length}</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {(['WEEK', 'MONTH', 'YEAR'] as AnalyticsPeriod[]).map((period) => (
+              <button
+                key={period}
+                onClick={() => {
+                  const range = getAnalyticsRange(period, now);
+                  setBookingDateFrom(range.start);
+                  setBookingDateTo(range.end);
+                  setBookingsPage(1);
+                }}
+                className="px-3 py-1.5 border border-zinc-700 text-zinc-300 hover:text-white text-xs"
+              >
+                {ANALYTICS_LABELS[period]}
+              </button>
+            ))}
           </div>
         </div>
       </div>
@@ -1053,9 +1284,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-800">
-            {bookings
-              .filter(b => !searchQuery || b.clientName.toLowerCase().includes(searchQuery.toLowerCase()))
-              .map(booking => {
+            {paginatedBookings.map(booking => {
                 const master = masters.find(m => m.id === booking.masterId);
                 return (
                   <tr key={booking.id} className="hover:bg-zinc-800/30 transition-colors">
@@ -1074,6 +1303,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         className="bg-zinc-800 border border-zinc-700 text-xs p-1 text-white"
                       >
                         <option value="PENDING">Ожидает</option>
+                        <option value="PENDING_EMAIL">Ожидает email</option>
                         <option value="CONFIRMED">Подтверждено</option>
                         <option value="IN_PROGRESS">В процессе</option>
                         <option value="COMPLETED">Завершено</option>
@@ -1088,8 +1318,35 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </tr>
                 );
               })}
+            {paginatedBookings.length === 0 && (
+              <tr>
+                <td colSpan={9} className="p-8 text-center text-zinc-500">По этим фильтрам записей не найдено.</td>
+              </tr>
+            )}
           </tbody>
         </table>
+      </div>
+
+      <div className="p-4 border-t border-zinc-800 flex flex-wrap items-center justify-between gap-3">
+        <div className="text-zinc-500 text-sm">
+          Страница <span className="text-white">{currentBookingsPage}</span> из <span className="text-white">{totalBookingsPages}</span>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setBookingsPage((page) => Math.max(1, page - 1))}
+            disabled={currentBookingsPage <= 1}
+            className="px-3 py-2 border border-zinc-700 text-zinc-300 disabled:opacity-40"
+          >
+            <ChevronLeft size={14} />
+          </button>
+          <button
+            onClick={() => setBookingsPage((page) => Math.min(totalBookingsPages, page + 1))}
+            disabled={currentBookingsPage >= totalBookingsPages}
+            className="px-3 py-2 border border-zinc-700 text-zinc-300 disabled:opacity-40"
+          >
+            <ChevronRight size={14} />
+          </button>
+        </div>
       </div>
     </Card>
   );
@@ -1293,245 +1550,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     </>
   );
 
-  const ContactClientModal = ({ client, onClose }: { client: Client; onClose: () => void }) => {
-    const [subject, setSubject] = useState(`KELVISI: сообщение для ${client.name}`);
-    const [message, setMessage] = useState(client.notes ? `Здравствуйте, ${client.name}!\n\nУчли ваши заметки: ${client.notes}.\n` : `Здравствуйте, ${client.name}!\n\n`);
-    const [error, setError] = useState('');
-    const [resultMessage, setResultMessage] = useState('');
-    const [isSubmitting, setIsSubmitting] = useState(false);
-
-    const handleSubmit = async (e: React.FormEvent) => {
-      e.preventDefault();
-      setError('');
-      setResultMessage('');
-      try {
-        setIsSubmitting(true);
-        const result = await onPrepareClientContact(client.id, { subject, message });
-        const draft = result?.draft;
-        if (draft?.to) {
-          openMailClient(draft.to, draft.subject || subject, draft.message || message);
-          setResultMessage('Черновик письма подготовлен и открыт в почтовом клиенте.');
-        } else {
-          setResultMessage('Черновик подготовлен. У клиента нет email, поэтому письмо не открыто автоматически.');
-        }
-      } catch (submitError) {
-        setError((submitError as Error).message || 'Не удалось подготовить сообщение.');
-      } finally {
-        setIsSubmitting(false);
-      }
-    };
-
-    return (
-      <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
-        <div className="bg-zinc-900 border border-zinc-800 w-full max-w-2xl">
-          <div className="p-6 border-b border-zinc-800 flex justify-between items-center">
-            <div>
-              <h3 className="text-white font-serif text-xl">Написать клиенту</h3>
-              <p className="text-zinc-500 text-sm mt-1">{client.name} • {client.email || client.phone}</p>
-            </div>
-            <button onClick={onClose} className="text-zinc-500 hover:text-white"><X size={20} /></button>
-          </div>
-          <form onSubmit={handleSubmit} className="p-6 space-y-4">
-            <div>
-              <label className="block text-zinc-500 text-xs uppercase mb-2">Тема</label>
-              <input
-                type="text"
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-                className="w-full bg-zinc-800 border border-zinc-700 p-3 text-white focus:border-gold-500 outline-none"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-zinc-500 text-xs uppercase mb-2">Сообщение</label>
-              <textarea
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                rows={8}
-                className="w-full bg-zinc-800 border border-zinc-700 p-3 text-white focus:border-gold-500 outline-none resize-none"
-                required
-              />
-            </div>
-            {client.notes && (
-              <div className="text-xs text-amber-400 bg-amber-900/10 border border-amber-900/30 p-3">
-                Заметка по клиенту: {client.notes}
-              </div>
-            )}
-            {error && <div className="text-sm text-red-400">{error}</div>}
-            {resultMessage && <div className="text-sm text-green-400">{resultMessage}</div>}
-            <div className="flex gap-3 pt-2">
-              <Button type="button" variant="ghost" onClick={onClose} className="flex-1">Закрыть</Button>
-              <Button type="submit" className="flex-1" disabled={isSubmitting}>
-                <Mail size={14} className="mr-2" /> {isSubmitting ? 'Подготовка...' : 'Открыть письмо'}
-              </Button>
-            </div>
-          </form>
-        </div>
-      </div>
-    );
-  };
-
-  const PromoClientModal = ({ client, onClose }: { client: Client; onClose: () => void }) => {
-    const [code, setCode] = useState(`KELVISI-${client.name.replace(/\s+/g, '').toUpperCase().slice(0, 6) || 'VIP'}-10`);
-    const [discount, setDiscount] = useState('Скидка 10% на следующий визит');
-    const [message, setMessage] = useState(`Здравствуйте, ${client.name}! Дарим вам промокод на следующий визит.`);
-    const [error, setError] = useState('');
-    const [resultMessage, setResultMessage] = useState('');
-    const [isSubmitting, setIsSubmitting] = useState(false);
-
-    const handleSubmit = async (e: React.FormEvent) => {
-      e.preventDefault();
-      setError('');
-      setResultMessage('');
-      try {
-        setIsSubmitting(true);
-        const result = await onIssueClientPromo(client.id, { code, discount, message });
-        const promo = result?.promo;
-        const preparedText = `${message}\n\nПромокод: ${promo?.code || code}\nУсловие: ${promo?.discount || discount}`;
-        const copied = await copyText(preparedText).catch(() => false);
-        setResultMessage(copied ? 'Промокод подготовлен и скопирован в буфер обмена.' : 'Промокод подготовлен. Скопируй текст вручную из формы.');
-      } catch (submitError) {
-        setError((submitError as Error).message || 'Не удалось подготовить промокод.');
-      } finally {
-        setIsSubmitting(false);
-      }
-    };
-
-    return (
-      <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
-        <div className="bg-zinc-900 border border-zinc-800 w-full max-w-2xl">
-          <div className="p-6 border-b border-zinc-800 flex justify-between items-center">
-            <div>
-              <h3 className="text-white font-serif text-xl">Выдать промокод</h3>
-              <p className="text-zinc-500 text-sm mt-1">{client.name} • {client.phone}</p>
-            </div>
-            <button onClick={onClose} className="text-zinc-500 hover:text-white"><X size={20} /></button>
-          </div>
-          <form onSubmit={handleSubmit} className="p-6 space-y-4">
-            <div className="grid md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-zinc-500 text-xs uppercase mb-2">Промокод</label>
-                <input
-                  type="text"
-                  value={code}
-                  onChange={(e) => setCode(e.target.value.toUpperCase())}
-                  className="w-full bg-zinc-800 border border-zinc-700 p-3 text-white focus:border-gold-500 outline-none"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-zinc-500 text-xs uppercase mb-2">Выгода</label>
-                <input
-                  type="text"
-                  value={discount}
-                  onChange={(e) => setDiscount(e.target.value)}
-                  className="w-full bg-zinc-800 border border-zinc-700 p-3 text-white focus:border-gold-500 outline-none"
-                  required
-                />
-              </div>
-            </div>
-            <div>
-              <label className="block text-zinc-500 text-xs uppercase mb-2">Текст для клиента</label>
-              <textarea
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                rows={6}
-                className="w-full bg-zinc-800 border border-zinc-700 p-3 text-white focus:border-gold-500 outline-none resize-none"
-              />
-            </div>
-            {error && <div className="text-sm text-red-400">{error}</div>}
-            {resultMessage && <div className="text-sm text-green-400">{resultMessage}</div>}
-            <div className="flex gap-3 pt-2">
-              <Button type="button" variant="ghost" onClick={onClose} className="flex-1">Закрыть</Button>
-              <Button type="submit" className="flex-1" disabled={isSubmitting}>
-                <Gift size={14} className="mr-2" /> {isSubmitting ? 'Подготовка...' : 'Подготовить промокод'}
-              </Button>
-            </div>
-          </form>
-        </div>
-      </div>
-    );
-  };
-
-  const ClientHistoryModal = ({ client, onClose }: { client: Client; onClose: () => void }) => (
-    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
-      <div className="bg-zinc-900 border border-zinc-800 w-full max-w-4xl max-h-[90vh] overflow-hidden">
-        <div className="p-6 border-b border-zinc-800 flex justify-between items-start gap-4">
-          <div>
-            <h3 className="text-white font-serif text-xl">История клиента</h3>
-            <p className="text-zinc-500 text-sm mt-1">{client.name} • {client.phone}{client.email ? ` • ${client.email}` : ''}</p>
-          </div>
-          <button onClick={onClose} className="text-zinc-500 hover:text-white"><X size={20} /></button>
-        </div>
-
-        <div className="p-6 overflow-y-auto max-h-[calc(90vh-96px)]">
-          {selectedClientLoading ? (
-            <p className="text-zinc-500">Загрузка записей...</p>
-          ) : selectedClientError ? (
-            <p className="text-red-400 text-sm">{selectedClientError}</p>
-          ) : selectedClientBookings.length === 0 ? (
-            <p className="text-zinc-500">По этому клиенту записей не найдено.</p>
-          ) : (
-            <div className="space-y-3">
-              {selectedClientBookings.map((booking) => {
-                const master = masters.find(m => m.id === booking.masterId);
-                return (
-                  <div key={booking.id} className="border border-zinc-800 bg-zinc-950/50 p-4">
-                    <div className="flex flex-wrap justify-between gap-3">
-                      <div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-white font-medium">{booking.date}</span>
-                          <span className="text-zinc-500 font-mono">{booking.time}</span>
-                          <span className={`text-xs px-2 py-0.5 border ${
-                            booking.status === 'COMPLETED' ? 'border-green-900 text-green-500 bg-green-900/10' :
-                            booking.status === 'CANCELLED' ? 'border-red-900 text-red-500 bg-red-900/10' :
-                            booking.status === 'NO_SHOW' ? 'border-red-900 text-red-400 bg-red-900/10' :
-                            booking.status === 'IN_PROGRESS' ? 'border-blue-900 text-blue-400 bg-blue-900/10' :
-                            booking.status === 'CONFIRMED' ? 'border-gold-900 text-gold-500 bg-gold-900/10' :
-                            'border-zinc-700 text-zinc-400 bg-zinc-800/20'
-                          }`}>
-                            {booking.status}
-                          </span>
-                        </div>
-                        <p className="text-zinc-300 mt-2">{booking.serviceId}</p>
-                        <p className="text-zinc-500 text-sm mt-1">Мастер: <span className="text-zinc-300">{master?.name || '-'}</span></p>
-                        {booking.notes && (
-                          <p className="text-zinc-600 text-xs mt-2 whitespace-pre-wrap">{booking.notes}</p>
-                        )}
-                      </div>
-                      <div className="text-right">
-                        <div className="text-gold-500 font-mono">{booking.totalPrice.toLocaleString()} ₽</div>
-                        <div className="text-zinc-600 text-xs mt-1">ID: {booking.id.slice(0, 8)}</div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-
   // Clients Tab
   const ClientsContent = () => (
     <Card className="p-0 overflow-hidden">
-      <div className="p-6 border-b border-zinc-800 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      <div className="p-6 border-b border-zinc-800 flex justify-between items-center">
         <div>
           <h3 className="text-white font-serif">База клиентов</h3>
-          <div className="text-zinc-500 text-sm">{filteredClients.length} из {clients.length} клиентов</div>
+          <div className="text-zinc-500 text-sm mt-1">{clients.length} клиентов</div>
         </div>
-        <div className="relative w-full md:w-80">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
-          <input
-            type="text"
-            placeholder="Поиск по имени, телефону, email..."
-            value={clientSearchQuery}
-            onChange={e => setClientSearchQuery(e.target.value)}
-            className="pl-10 pr-4 py-2 bg-zinc-800 border border-zinc-700 text-white text-sm w-full focus:border-gold-500 outline-none"
-          />
-        </div>
+        <Button variant="outline" onClick={downloadClientsReport} className="text-xs px-3 py-2">
+          <Download size={14} className="mr-2" /> Скачать отчет CSV
+        </Button>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm text-zinc-400">
@@ -1547,7 +1576,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-800">
-            {filteredClients.map(client => {
+            {clients.map(client => {
               const daysSinceVisit = client.lastVisit 
                 ? Math.floor((now.getTime() - new Date(client.lastVisit).getTime()) / (1000 * 60 * 60 * 24))
                 : null;
@@ -1573,27 +1602,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <td className="p-4 text-zinc-500 text-xs max-w-[150px] truncate">{client.notes || '-'}</td>
                   <td className="p-4">
                     <div className="flex gap-1">
-                      <button
-                        className="p-1 text-zinc-500 hover:text-gold-500"
-                        title="История записей"
-                        onClick={() => openClientDetails(client)}
-                      >
-                        <Eye size={14} />
-                      </button>
-                      <button
-                        className="p-1 text-zinc-500 hover:text-white"
-                        title="Написать"
-                        onClick={() => setContactClient(client)}
-                      >
-                        <Mail size={14} />
-                      </button>
-                      <button
-                        className="p-1 text-zinc-500 hover:text-gold-500"
-                        title="Отправить промокод"
-                        onClick={() => setPromoClient(client)}
-                      >
-                        <Gift size={14} />
-                      </button>
+                      <button className="p-1 text-zinc-500 hover:text-white" title="Написать"><Mail size={14} /></button>
+                      <button className="p-1 text-zinc-500 hover:text-gold-500" title="Отправить промокод"><Gift size={14} /></button>
                     </div>
                   </td>
                 </tr>
@@ -1624,7 +1634,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <th className="p-4">Роль</th>
               <th className="p-4">Статус</th>
               <th className="p-4">Дата создания</th>
-              <th className="p-4 text-right">Действия</th>
+              <th className="p-4 text-right">Управление</th>
             </tr>
           </thead>
           <tbody>
@@ -1640,14 +1650,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </td>
                 <td className="p-4 text-zinc-400 font-mono text-sm">{user.email}</td>
                 <td className="p-4">
-                  <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${
-                    user.role === 'ADMIN' ? 'bg-purple-900/30 text-purple-400' :
-                    user.role === 'MASTER' ? 'bg-blue-900/30 text-blue-400' :
-                    'bg-gray-900/30 text-gray-400'
-                  }`}>
-                    {user.role === 'ADMIN' && <Shield size={12} />}
-                    {user.role === 'MASTER' ? 'Стилист' : user.role === 'ADMIN' ? 'Администратор' : 'Клиент'}
-                  </span>
+                  <select
+                    value={user.role}
+                    onChange={(e) => onUpdateUser(user.id, { role: e.target.value as User['role'] })}
+                    disabled={user.id === currentUser.id}
+                    className="bg-zinc-800 border border-zinc-700 text-xs px-2 py-1 text-white disabled:opacity-40"
+                    title={user.id === currentUser.id ? 'Нельзя менять роль самому себе' : 'Изменить роль'}
+                  >
+                    <option value="CLIENT">Клиент</option>
+                    <option value="MASTER">Стилист</option>
+                    <option value="ADMIN">Администратор</option>
+                  </select>
                 </td>
                 <td className="p-4">
                   <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${
@@ -1663,11 +1676,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </td>
                 <td className="p-4 text-zinc-500 text-xs">{new Date(user.createdAt).toLocaleDateString('ru-RU')}</td>
                 <td className="p-4 text-right">
-                  <div className="flex gap-1 justify-end">
-                    <button className="p-1 text-zinc-500 hover:text-gold-500 transition-colors" title="Редактировать">
-                      <Edit2 size={14} />
-                    </button>
-                    <button className={`p-1 transition-colors ${user.isActive ? 'text-zinc-500 hover:text-red-500' : 'text-zinc-500 hover:text-green-500'}`} title={user.isActive ? 'Деактивировать' : 'Активировать'}>
+                  <div className="flex gap-2 justify-end items-center">
+                    {user.id === currentUser.id && (
+                      <span className="text-xs text-amber-500">Ваш аккаунт</span>
+                    )}
+                    <button
+                      className={`p-1 transition-colors ${
+                        user.id === currentUser.id
+                          ? 'text-zinc-700 cursor-not-allowed'
+                          : user.isActive
+                            ? 'text-zinc-500 hover:text-red-500'
+                            : 'text-zinc-500 hover:text-green-500'
+                      }`}
+                      title={user.id === currentUser.id ? 'Нельзя деактивировать самого себя' : user.isActive ? 'Деактивировать' : 'Активировать'}
+                      disabled={user.id === currentUser.id}
+                      onClick={() => onUpdateUser(user.id, { isActive: !user.isActive })}
+                    >
                       {user.isActive ? <Lock size={14} /> : <Check size={14} />}
                     </button>
                   </div>
@@ -1686,14 +1710,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       <div className="flex justify-between items-center mb-6">
         <h3 className="text-white font-serif text-xl">Лист ожидания</h3>
         <span className="text-xs bg-gold-500/20 text-gold-500 px-3 py-1 rounded-full">
-          {activeWaitlist.length} в очереди
+          {waitlist.length} в очереди
         </span>
       </div>
       
       <div className="space-y-4">
-        {activeWaitlist.map(entry => {
+        {waitlist.map(entry => {
           const master = masters.find(m => m.id === entry.masterId);
-          const relevantDates = entry.preferredDates.filter(isDateOnOrAfterToday);
           return (
             <Card key={entry.id} className="p-6">
               <div className="flex items-start justify-between gap-4">
@@ -1704,7 +1727,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                   <div className="flex gap-4 text-sm text-zinc-400">
                     <span>Мастер: <span className="text-white">{master?.name || '-'}</span></span>
-                    <span>Даты: <span className="text-white">{relevantDates.join(', ')}</span></span>
+                    <span>Даты: <span className="text-white">{entry.preferredDates.join(', ')}</span></span>
                   </div>
                   <div className="text-zinc-600 text-xs mt-2">Добавлено: {entry.createdAt}</div>
                 </div>
@@ -1716,10 +1739,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           );
         })}
         
-        {activeWaitlist.length === 0 && (
+        {waitlist.length === 0 && (
           <Card className="p-12 text-center">
             <Bell size={48} className="mx-auto text-zinc-700 mb-4" />
-            <p className="text-zinc-500">В листе ожидания нет актуальных записей</p>
+            <p className="text-zinc-500">Лист ожидания пуст</p>
           </Card>
         )}
       </div>
@@ -1781,31 +1804,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         {activeTab === 'users' && <UsersContent />}
         {activeTab === 'waitlist' && <WaitlistContent />}
       </div>
-
-      {contactClient && (
-        <ContactClientModal
-          client={contactClient}
-          onClose={() => setContactClient(null)}
-        />
-      )}
-
-      {promoClient && (
-        <PromoClientModal
-          client={promoClient}
-          onClose={() => setPromoClient(null)}
-        />
-      )}
-
-      {selectedClient && (
-        <ClientHistoryModal
-          client={selectedClient}
-          onClose={() => {
-            setSelectedClient(null);
-            setSelectedClientBookings([]);
-            setSelectedClientError('');
-          }}
-        />
-      )}
     </div>
   );
 };
