@@ -497,16 +497,18 @@ export const StylistCabinet: React.FC<StylistCabinetProps> = ({
 
   return (
     <div className="min-h-screen bg-black text-zinc-200 selection:bg-zinc-700 selection:text-white">
-      <div className="bg-gradient-to-r from-gold-500 to-gold-600 text-black p-6">
+      <div className="border-b border-zinc-800 bg-zinc-950/95 p-6 shadow-[0_18px_45px_rgba(0,0,0,0.35)]">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            <img src={master.imageUrl} alt={master.name} className="w-16 h-16 rounded-full object-cover border-4 border-black" />
+            <div className="h-16 w-1 rounded-full bg-gold-500" />
+            <img src={master.imageUrl} alt={master.name} className="w-16 h-16 rounded-full object-cover border-2 border-gold-500/45" />
             <div>
-              <h1 className="text-3xl font-bold">{master.name}</h1>
-              <p className="text-gold-900">{master.role}</p>
+              <p className="text-xs uppercase tracking-[0.22em] text-gold-400">Кабинет мастера</p>
+              <h1 className="text-3xl font-bold text-white">{master.name}</h1>
+              <p className="text-zinc-400">{master.role}</p>
             </div>
           </div>
-          <button onClick={onLogout} className="flex items-center gap-2 bg-black text-white px-4 py-2 rounded-lg hover:bg-zinc-900 transition-colors">
+          <button onClick={onLogout} className="flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900 px-4 py-2 text-zinc-300 hover:border-gold-500/60 hover:text-white transition-colors">
             <LogOut className="w-5 h-5" />
             Выход
           </button>

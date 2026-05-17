@@ -1752,14 +1752,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   return (
     <div className="min-h-screen bg-[#0c0c0e]">
       {/* Header */}
-      <div className="bg-zinc-900 border-b border-zinc-800 sticky top-0 z-40">
+      <div className="sticky top-0 z-40 border-b border-zinc-800 bg-zinc-950/95 shadow-[0_14px_35px_rgba(0,0,0,0.28)] backdrop-blur">
         <div className="container mx-auto px-4">
           <div className="flex justify-between items-center h-16">
             <h1 className="text-xl font-serif text-white">KELVISI <span className="text-zinc-500 font-sans text-sm ml-2">/ Администратор</span></h1>
             <div className="flex items-center gap-4">
               <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
               <span className="text-zinc-400 text-sm hidden sm:inline">Система активна</span>
-              <span className="text-gold-500 text-sm font-medium ml-4 px-3 py-1 bg-gold-500/10 rounded">{currentUser.name}</span>
+              <span className="ml-4 rounded border border-zinc-800 bg-zinc-900 px-3 py-1 text-sm font-medium text-zinc-200">
+                <span className="mr-2 inline-block h-1.5 w-1.5 rounded-full bg-gold-500 align-middle" />
+                {currentUser.name}
+              </span>
               <button
                 onClick={onLogout}
                 className="flex items-center gap-2 text-zinc-400 hover:text-red-500 transition-colors text-sm ml-2"
@@ -1778,7 +1781,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 onClick={() => setActiveTab(tab.id)}
                 className={`flex items-center gap-2 px-4 py-3 text-sm whitespace-nowrap border-b-2 transition-colors ${
                   activeTab === tab.id 
-                    ? 'border-gold-500 text-gold-500' 
+                    ? 'border-gold-500 text-gold-400' 
                     : 'border-transparent text-zinc-500 hover:text-white'
                 }`}
               >
@@ -1807,6 +1810,5 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     </div>
   );
 };
-
 
 
