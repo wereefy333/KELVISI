@@ -26,6 +26,8 @@ async function main() {
     { id: 'u4', email: 'anna@salon.ru', password: hashPassword('pass123'), name: 'Анна Соколова', role: 'MASTER', phone: '+7 900 444 55 66', isActive: true },
     { id: 'u5', email: 'maria@salon.ru', password: hashPassword('pass123'), name: 'Мария Козлова', role: 'MASTER', phone: '+7 900 555 66 77', isActive: true },
     { id: 'u6', email: 'artem@salon.ru', password: hashPassword('pass123'), name: 'Артем Новиков', role: 'MASTER', phone: '+7 900 666 77 88', isActive: true },
+    { id: 'u7', email: 'sofiya@salon.ru', password: hashPassword('pass123'), name: 'София Романова', role: 'MASTER', phone: '+7 900 777 88 99', isActive: true },
+    { id: 'u8', email: 'ksenia@salon.ru', password: hashPassword('pass123'), name: 'Ксения Миронова', role: 'MASTER', phone: '+7 900 888 99 00', isActive: true },
     { id: 'u_admin', email: 'admin@salon.ru', password: hashPassword('admin123'), name: '\u0410\u0434\u043c\u0438\u043d\u0438\u0441\u0442\u0440\u0430\u0442\u043e\u0440 \u0441\u0430\u043b\u043e\u043d\u0430', role: 'ADMIN', phone: '+7 900 000 00 00', isActive: true },
     { id: 'u_client', email: 'client@email.com', password: hashPassword('client123'), name: 'Клиент Тестовый', role: 'CLIENT', phone: '+7 900 999 99 99', isActive: true },
   ];
@@ -80,7 +82,7 @@ async function main() {
       workSchedule: { 1: {start:'10:00',end:'20:00'}, 2: {start:'10:00',end:'20:00'}, 3: {start:'10:00',end:'20:00'}, 4: {start:'10:00',end:'20:00'}, 5: {start:'10:00',end:'20:00'}, 6: {start:'11:00',end:'18:00'}, 0: null },
     },
     {
-      id: 'mst7', name: '\u0421\u043e\u0444\u0438\u044f \u0420\u043e\u043c\u0430\u043d\u043e\u0432\u0430', role: 'TOP NAIL ARTIST', rating: 4.9, specialization: ['WOMEN'], level: 'TOP', priceMultiplier: 1.5,
+      id: 'mst7', userId: 'u7', name: '\u0421\u043e\u0444\u0438\u044f \u0420\u043e\u043c\u0430\u043d\u043e\u0432\u0430', role: 'TOP NAIL ARTIST', rating: 4.9, specialization: ['WOMEN'], level: 'TOP', priceMultiplier: 1.5,
       imageUrl: '/masters/sofiya-romanova.jpg',
       workSchedule: { 1: {start:'10:00',end:'20:00'}, 2: {start:'10:00',end:'20:00'}, 3: {start:'10:00',end:'20:00'}, 4: {start:'10:00',end:'20:00'}, 5: {start:'10:00',end:'20:00'}, 6: {start:'11:00',end:'18:00'}, 0: null },
     },
@@ -90,7 +92,7 @@ async function main() {
       workSchedule: { 1: {start:'10:00',end:'20:00'}, 2: {start:'10:00',end:'20:00'}, 3: null, 4: {start:'10:00',end:'20:00'}, 5: {start:'10:00',end:'20:00'}, 6: {start:'11:00',end:'18:00'}, 0: null },
     },
     {
-      id: 'mst8', name: '\u041a\u0441\u0435\u043d\u0438\u044f \u041c\u0438\u0440\u043e\u043d\u043e\u0432\u0430', role: 'MAKEUP ARTIST', rating: 5.0, specialization: ['WOMEN'], level: 'SENIOR', priceMultiplier: 1.2,
+      id: 'mst8', userId: 'u8', name: '\u041a\u0441\u0435\u043d\u0438\u044f \u041c\u0438\u0440\u043e\u043d\u043e\u0432\u0430', role: 'MAKEUP ARTIST', rating: 5.0, specialization: ['WOMEN'], level: 'SENIOR', priceMultiplier: 1.2,
       imageUrl: '/masters/ksenia-mironova.jpg',
       workSchedule: { 1: {start:'10:00',end:'20:00'}, 2: {start:'10:00',end:'20:00'}, 3: {start:'10:00',end:'20:00'}, 4: null, 5: {start:'10:00',end:'20:00'}, 6: {start:'11:00',end:'18:00'}, 0: null },
     },
@@ -118,6 +120,7 @@ async function main() {
     await prisma.master.upsert({
       where: { id: m.id },
       update: {
+        userId: m.userId,
         name: m.name,
         role: m.role,
         rating: m.rating,
@@ -228,6 +231,5 @@ main()
     process.exit(1);
   })
   .finally(() => prisma.$disconnect());
-
 
 

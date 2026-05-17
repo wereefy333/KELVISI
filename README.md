@@ -97,6 +97,12 @@ npm run dev
 | Администратор | `admin@salon.ru` | `admin123` |
 | Мастер | `aleksandr@salon.ru` | `pass123` |
 | Мастер | `elena@salon.ru` | `pass123` |
+| Мастер | `dmitry@salon.ru` | `pass123` |
+| Мастер | `anna@salon.ru` | `pass123` |
+| Мастер | `maria@salon.ru` | `pass123` |
+| Мастер | `artem@salon.ru` | `pass123` |
+| Мастер | `sofiya@salon.ru` | `pass123` |
+| Мастер | `ksenia@salon.ru` | `pass123` |
 | Клиент | `client@email.com` | `client123` |
 
 ## Скрипты

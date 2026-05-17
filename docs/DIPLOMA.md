@@ -817,6 +817,8 @@ kelvisi/
 | MASTER | `anna@salon.ru` | `pass123` |
 | MASTER | `maria@salon.ru` | `pass123` |
 | MASTER | `artem@salon.ru` | `pass123` |
+| MASTER | `sofiya@salon.ru` | `pass123` |
+| MASTER | `ksenia@salon.ru` | `pass123` |
 | CLIENT | `client@email.com` | `client123` |
 
 ### Каталог услуг
