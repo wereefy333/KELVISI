@@ -20,7 +20,6 @@
     width: max-content;
     animation: marquee 44s linear infinite;
   }
-  .animate-marquee:hover { animation-play-state: paused; }
 
   /* ── Scroll-reveal (section level) ── */
   .sr-item {

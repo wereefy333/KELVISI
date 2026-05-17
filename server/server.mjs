@@ -1033,9 +1033,13 @@ app.get('/api/confirm-booking', async (req, res) => {
 // в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ
 
 app.get('/api/reviews', async (req, res) => {
-  const authHeader = req.headers.authorization || '';
-  const match = /^Bearer\s+(.+)$/.exec(authHeader);
-  const tokenPayload = match ? decodeAuthToken(match[1]) : null;
+  let token = req.cookies?.token;
+  if (!token) {
+    const authHeader = req.headers.authorization || '';
+    const match = /^Bearer\s+(.+)$/.exec(authHeader);
+    if (match) token = match[1];
+  }
+  const tokenPayload = token ? decodeAuthToken(token) : null;
   const isAdmin = tokenPayload
     ? await prisma.user.findFirst({ where: { id: tokenPayload.sub, role: 'ADMIN', isActive: true } })
     : null;

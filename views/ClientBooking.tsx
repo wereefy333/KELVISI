@@ -425,6 +425,17 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({ onBook, services, 
     setSelectedTime(null);
   };
 
+  const startBookingWithService = (service: Service) => {
+    setCategory(service.category);
+    setSelectedServices([service]);
+    setServiceMasterSelections({});
+    setServiceSecondarySelections({});
+    setTimingMode('SEQUENTIAL');
+    setShowTimingModePrompt(false);
+    setSelectedTime(null);
+    setStep('SERVICE');
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedTime) {
@@ -719,7 +730,12 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({ onBook, services, 
               </div>
               <div className="space-y-4">
                 {menServices.map(service => (
-                  <div key={service.id} className="bg-zinc-900 border border-zinc-800 p-5 hover:border-gold-500/50 transition-all group">
+                  <button
+                    key={service.id}
+                    type="button"
+                    onClick={() => startBookingWithService(service)}
+                    className="w-full text-left bg-zinc-900 border border-zinc-800 p-5 hover:border-gold-500/50 hover:bg-zinc-900/80 focus:outline-none focus:border-gold-500 focus:ring-1 focus:ring-gold-500/40 transition-all group"
+                  >
                     <div className="flex justify-between items-start">
                       <div>
                         <h5 className="text-white font-serif group-hover:text-gold-500 transition-colors">{service.name}</h5>
@@ -727,7 +743,10 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({ onBook, services, 
                       </div>
                       <span className="text-gold-500 font-bold whitespace-nowrap">{service.price}&nbsp;₽</span>
                     </div>
-                  </div>
+                    <span className="mt-4 inline-flex items-center text-[11px] uppercase tracking-widest text-zinc-500 group-hover:text-gold-500 transition-colors">
+                      Записаться <ArrowRight size={13} className="ml-2" />
+                    </span>
+                  </button>
                 ))}
               </div>
             </div>
@@ -740,7 +759,12 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({ onBook, services, 
               </div>
               <div className="space-y-4">
                 {womenServices.map(service => (
-                  <div key={service.id} className="bg-zinc-900 border border-zinc-800 p-5 hover:border-gold-500/50 transition-all group">
+                  <button
+                    key={service.id}
+                    type="button"
+                    onClick={() => startBookingWithService(service)}
+                    className="w-full text-left bg-zinc-900 border border-zinc-800 p-5 hover:border-gold-500/50 hover:bg-zinc-900/80 focus:outline-none focus:border-gold-500 focus:ring-1 focus:ring-gold-500/40 transition-all group"
+                  >
                     <div className="flex justify-between items-start">
                       <div>
                         <h5 className="text-white font-serif group-hover:text-gold-500 transition-colors">{service.name}</h5>
@@ -748,7 +772,10 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({ onBook, services, 
                       </div>
                       <span className="text-gold-500 font-bold whitespace-nowrap">{service.price}&nbsp;₽</span>
                     </div>
-                  </div>
+                    <span className="mt-4 inline-flex items-center text-[11px] uppercase tracking-widest text-zinc-500 group-hover:text-gold-500 transition-colors">
+                      Записаться <ArrowRight size={13} className="ml-2" />
+                    </span>
+                  </button>
                 ))}
               </div>
             </div>
