@@ -11,7 +11,8 @@
     "db:migrate": "prisma migrate dev",
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
-    "db:generate": "prisma generate"
+    "db:generate": "prisma generate",
+    "test:admin": "node scripts/admin-smoke.mjs"
   },
   "prisma": {
     "seed": "node prisma/seed.mjs"
@@ -34,6 +35,7 @@
     "tailwindcss": "^3.4.19"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@types/cookie-parser": "^1.4.10",
     "@types/node": "^22.14.0",
     "@types/react": "^19.2.13",

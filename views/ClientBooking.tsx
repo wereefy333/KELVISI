@@ -725,7 +725,7 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({ onBook, services, 
                         <h5 className="text-white font-serif group-hover:text-gold-500 transition-colors">{service.name}</h5>
                         <p className="text-zinc-500 text-sm mt-1">{service.description}</p>
                       </div>
-                      <span className="text-gold-500 font-bold">{service.price} ₽</span>
+                      <span className="text-gold-500 font-bold whitespace-nowrap">{service.price}&nbsp;₽</span>
                     </div>
                   </div>
                 ))}
@@ -746,7 +746,7 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({ onBook, services, 
                         <h5 className="text-white font-serif group-hover:text-gold-500 transition-colors">{service.name}</h5>
                         <p className="text-zinc-500 text-sm mt-1">{service.description}</p>
                       </div>
-                      <span className="text-gold-500 font-bold">{service.price} ₽</span>
+                      <span className="text-gold-500 font-bold whitespace-nowrap">{service.price}&nbsp;₽</span>
                     </div>
                   </div>
                 ))}
@@ -1204,7 +1204,7 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({ onBook, services, 
             <div className="flex items-center justify-center md:justify-end gap-3">
                <span className="text-white text-3xl font-serif">{selectedServices.length}</span>
                <div className="h-8 w-[1px] bg-zinc-700"></div>
-               <span className="text-gold-500 font-serif text-3xl">{totalPrice} ₽</span>
+               <span className="text-gold-500 font-serif text-3xl whitespace-nowrap">{totalPrice}&nbsp;₽</span>
             </div>
           </div>
         </div>
@@ -1225,7 +1225,7 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({ onBook, services, 
                 </div>
                 <p className="text-zinc-400 text-sm mb-6 flex-grow leading-relaxed">{service.description}</p>
                 <div className="flex justify-between items-center text-sm border-t border-zinc-800 pt-4 mt-auto">
-                  <span className="text-white font-bold text-lg">{service.price} ₽</span>
+                  <span className="text-white font-bold text-lg whitespace-nowrap">{service.price}&nbsp;₽</span>
                   <span className="flex items-center text-zinc-500"><Clock size={14} className="mr-1"/> {service.durationMinutes} мин</span>
                 </div>
               </Card>
@@ -1236,7 +1236,7 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({ onBook, services, 
         <div className="fixed bottom-0 left-0 right-0 p-4 bg-zinc-950/95 backdrop-blur border-t border-gold-500/30 flex justify-between items-center z-50 shadow-2xl">
           <div className="pl-2 md:pl-10">
             <p className="text-[10px] text-zinc-500 uppercase tracking-widest">Итого к оплате</p>
-            <p className="text-white font-serif text-xl md:text-2xl">{totalPrice} ₽ <span className="text-zinc-600 text-sm font-sans">/ {totalDuration} мин</span></p>
+            <p className="text-white font-serif text-xl md:text-2xl"><span className="whitespace-nowrap">{totalPrice}&nbsp;₽</span> <span className="text-zinc-600 text-sm font-sans">/ {totalDuration} мин</span></p>
           </div>
           <div className="flex gap-4 pr-2 md:pr-10">
             <Button variant="ghost" onClick={() => setStep('GENDER')}>Назад</Button>
@@ -1603,7 +1603,7 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({ onBook, services, 
           </div>
           <div className="flex justify-between items-center pt-4 border-t border-zinc-800 mt-4">
             <span className="text-lg">Итого</span>
-            <span className="text-3xl font-serif text-gold-500">{totalPrice} ₽</span>
+            <span className="text-3xl font-serif text-gold-500 whitespace-nowrap">{totalPrice}&nbsp;₽</span>
           </div>
         </div>
       </Card>

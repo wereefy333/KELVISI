@@ -41,6 +41,9 @@ interface AdminDashboardProps {
   onApproveReview: (id: string) => void;
   onRejectReview: (id: string) => void;
   onUpdateBooking: (id: string, updates: Partial<Booking>) => void;
+  onPrepareClientContact: (clientId: string, payload: { subject: string; message: string }) => Promise<{ draft?: { to: string; subject: string; message: string } }>;
+  onIssueClientPromo: (clientId: string, payload: { code: string; discount: string; message?: string }) => Promise<{ promo?: { code: string; discount: string; message: string } }>;
+  onGetClientBookings: (clientId: string) => Promise<Booking[]>;
   onLogout: () => void;
 }
 
@@ -156,6 +159,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onApproveReview,
   onRejectReview,
   onUpdateBooking,
+  onPrepareClientContact,
+  onIssueClientPromo,
+  onGetClientBookings,
   onLogout
 }) => {
   const [activeTab, setActiveTab] = useState<AdminTab>('dashboard');
@@ -287,6 +293,81 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         client.notes || '',
       ]),
     ]);
+  };
+
+  const handlePrepareClientContact = async (client: Client) => {
+    const subject = window.prompt('Тема сообщения', `Kelvisi: ${client.name}`);
+    if (subject === null) return;
+
+    const message = window.prompt('Текст сообщения', client.email ? `Здравствуйте, ${client.name}!` : `Позвонить клиенту: ${client.phone}`);
+    if (message === null || !message.trim()) return;
+
+    try {
+      const result = await onPrepareClientContact(client.id, { subject: subject.trim(), message: message.trim() });
+      const draft = result?.draft;
+      window.alert(draft
+        ? `Черновик подготовлен\nКому: ${draft.to || client.phone}\nТема: ${draft.subject}\n\n${draft.message}`
+        : 'Черновик сообщения подготовлен');
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Не удалось подготовить сообщение');
+    }
+  };
+
+  const handleIssueClientPromo = async (client: Client) => {
+    const defaultCode = `KELVISI${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+    const code = window.prompt('Промокод', defaultCode);
+    if (code === null) return;
+
+    const discount = window.prompt('Выгода по промокоду', '10% на следующий визит');
+    if (discount === null || !discount.trim()) return;
+
+    const message = window.prompt('Сообщение клиенту', `Здравствуйте, ${client.name}! Для вас промокод ${code.toUpperCase()}: ${discount}`);
+    try {
+      const result = await onIssueClientPromo(client.id, {
+        code: code.trim(),
+        discount: discount.trim(),
+        message: message?.trim() || undefined,
+      });
+      const promo = result?.promo;
+      window.alert(promo
+        ? `Промокод подготовлен\nКод: ${promo.code}\nВыгода: ${promo.discount}\n\n${promo.message}`
+        : 'Промокод подготовлен');
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Не удалось подготовить промокод');
+    }
+  };
+
+  const handleShowClientBookings = async (client: Client) => {
+    try {
+      const clientBookings = await onGetClientBookings(client.id);
+      if (clientBookings.length === 0) {
+        window.alert(`У клиента ${client.name} пока нет записей.`);
+        return;
+      }
+
+      window.alert(clientBookings
+        .slice(0, 8)
+        .map((booking) => `${booking.date} ${booking.time} — ${booking.serviceId} (${BOOKING_STATUS_LABELS[booking.status]})`)
+        .join('\n'));
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Не удалось загрузить историю клиента');
+    }
+  };
+
+  const handleShowBookingDetails = (booking: Booking) => {
+    const master = masters.find((item) => item.id === booking.masterId);
+    window.alert([
+      `Запись: ${booking.id}`,
+      `Дата: ${booking.date} ${booking.time}`,
+      `Клиент: ${booking.clientName}`,
+      `Телефон: ${booking.clientPhone}`,
+      `Email: ${booking.clientEmail || 'не указан'}`,
+      `Услуга: ${booking.serviceId}`,
+      `Мастер: ${master?.name || '-'}`,
+      `Статус: ${BOOKING_STATUS_LABELS[booking.status]}`,
+      `Сумма: ${booking.totalPrice.toLocaleString('ru-RU')} ₽`,
+      `Заметки: ${booking.notes || '-'}`,
+    ].join('\n'));
   };
 
   // Inactive clients (not visited in 60 days)
@@ -1313,7 +1394,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </td>
                     <td className="p-4 text-right text-gold-500 font-mono">{booking.totalPrice} ₽</td>
                     <td className="p-4">
-                      <button className="text-zinc-500 hover:text-white p-1"><Eye size={16} /></button>
+                      <button
+                        onClick={() => handleShowBookingDetails(booking)}
+                        className="text-zinc-500 hover:text-white p-1"
+                        title="Детали записи"
+                      >
+                        <Eye size={16} />
+                      </button>
                     </td>
                   </tr>
                 );
@@ -1602,8 +1689,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <td className="p-4 text-zinc-500 text-xs max-w-[150px] truncate">{client.notes || '-'}</td>
                   <td className="p-4">
                     <div className="flex gap-1">
-                      <button className="p-1 text-zinc-500 hover:text-white" title="Написать"><Mail size={14} /></button>
-                      <button className="p-1 text-zinc-500 hover:text-gold-500" title="Отправить промокод"><Gift size={14} /></button>
+                      <button
+                        onClick={() => handleShowClientBookings(client)}
+                        className="p-1 text-zinc-500 hover:text-white"
+                        title="История записей"
+                      >
+                        <Eye size={14} />
+                      </button>
+                      <button
+                        onClick={() => handlePrepareClientContact(client)}
+                        className="p-1 text-zinc-500 hover:text-white"
+                        title="Написать"
+                      >
+                        <Mail size={14} />
+                      </button>
+                      <button
+                        onClick={() => handleIssueClientPromo(client)}
+                        className="p-1 text-zinc-500 hover:text-gold-500"
+                        title="Отправить промокод"
+                      >
+                        <Gift size={14} />
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -1779,6 +1885,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
+                aria-label={tab.label}
+                title={tab.label}
                 className={`flex items-center gap-2 px-4 py-3 text-sm whitespace-nowrap border-b-2 transition-colors ${
                   activeTab === tab.id 
                     ? 'border-gold-500 text-gold-400' 
@@ -1810,5 +1918,3 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     </div>
   );
 };
-
-
